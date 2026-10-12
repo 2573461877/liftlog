@@ -1,0 +1,9 @@
+{
+  "name": "liftlog-pwa",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first, local-only strength training journal",
+  "scripts": { "start": "node server.mjs", "check": "node --check docs/app.js && node --check docs/domain.js && node --check docs/storage.js && node --check docs/sw.js" },
+  "engines": { "node": ">=18" }
+}
