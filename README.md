@@ -66,7 +66,13 @@ node server.mjs
 - 本地数据/备份格式为 v2，兼容导入与读取 v1；保留已有 ID、动作顺序及训练内容。不会自动清空旧数据。不支持把 v2 备份导入旧版应用。
 - 身体参数初始为空，只由用户在设备上填写；公共代码不包含用户的个人参数或训练记录。
 
-双击缩放使用 WebKit 支持的 `touch-action: manipulation` 抑制，保留双指缩放；手机输入控件字号至少 16px，减少聚焦自动放大。[WebKit 说明](https://webkit.org/blog/5610/more-responsive-tapping-on-ios/)。仍需在实际 iPhone Safari/主屏幕 App 上核验。
+### v1.1.1 手机交互调整
+
+- 数字输入框为 0 时，聚焦后临时留空，直接输入即可替换；未输入就离开会恢复 0，非零数值不会自动清空。训练与计划编辑共用此行为，记录仍按合法数字保存。
+- 休息卡片位于训练内容前部，滚动时吸附顶部；保留单指原生滚动，卡片内可增减时间，暂停／结束状态始终可见。顶部避让 `safe-area-inset-top`，不写死设备型号或屏幕尺寸。
+- 放大动作说明、表头、历史日期、按钮、导航等常用文本；手机输入字号至少 16px，训练数字 18px。
+- 按自用需求关闭双击／双指页面缩放，使用 `touch-action: pan-x pan-y`、viewport 限制与 Safari 手势事件兜底；不禁用系统辅助功能或修改设备设置。禁用触摸缩放会减少低视力用户的放大手段，本版本是用户明确选择的自用交互。
+- 浏览器或辅助功能设置仍可能覆盖页面的缩放限制，真实 iPhone Safari／主屏幕 App 效果需实测；模拟触摸测试不等于 iPhone 18 Pro 真机验证。参考 [MDN touch-action](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/touch-action)、[viewport 限制](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/meta/name/viewport) 与 [WebKit gesturestart](https://developer.mozilla.org/en-US/docs/Web/API/Element/gesturestart_event)。
 
 ### 应用结构
 
