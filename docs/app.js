@@ -38,7 +38,7 @@ const channel = 'BroadcastChannel' in window ? new BroadcastChannel('liftlog-cha
 let offlineReady = false;
 
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimeout); toastTimeout = setTimeout(() => el.classList.remove('show'), 3200); }
-function updateSaveLabel() { document.querySelectorAll('[data-save-label]').forEach(el => { el.textContent = saveError ? '保存失败 · 请立即导出备份' : pendingSaves ? '正在保存…' : '已自动保存到本机'; el.classList.toggle('error', saveError); }); }
+function updateSaveLabel() { document.querySelectorAll('[data-save-label]').forEach(el => { el.textContent = saveError ? '保存失败 · 请立即导出备份' : pendingSaves ? '正在保存…' : '已自动保存到本机'; el.classList.toggle('error', saveError); }); if(saveError&&!document.querySelector('#save-alert'))document.querySelector('main')?.insertAdjacentHTML('afterbegin','<div id="save-alert" class="notice warning" role="alert">记录尚未成功保存。请到设置中导出完整备份，勿关闭本页。</div>'); if(!saveError)document.querySelector('#save-alert')?.remove(); }
 function persist() {
   if (readOnly) return Promise.resolve(false);
   state.updatedAt = Date.now(); const snapshot = clone(state); pendingSaves++; updateSaveLabel();
