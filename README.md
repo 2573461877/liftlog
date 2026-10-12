@@ -5,6 +5,8 @@
 ## 功能
 
 - 胸 / 背 / 腿 / 肩四分化模板；新建、编辑、复制、删除计划。
+- 内置 140 个中文动作，支持中文 / 英文 / 别名搜索，以及 13 类主要部位和 13 类主要器材交叉筛选；无运行时动作库 API 依赖。
+- 训练中添加动作、计划中添加或替换动作，均保留手动输入；计划按动作名称、组数 / 次数 / 重量两行编辑，每张卡片独立标注单位。
 - 自由训练；动作、组数、重量（kg）、次数、完成标记与训练备注。
 - 同名动作自动带入最近一次训练数据；误触完成可以撤销。
 - 组间休息计时，按结束时间恢复；可手动增减休息时间。
@@ -74,7 +76,17 @@ node server.mjs
 - 按自用需求关闭双击／双指页面缩放，使用 `touch-action: pan-x pan-y`、viewport 限制与 Safari 手势事件兜底；不禁用系统辅助功能或修改设备设置。禁用触摸缩放会减少低视力用户的放大手段，本版本是用户明确选择的自用交互。
 - 浏览器或辅助功能设置仍可能覆盖页面的缩放限制，真实 iPhone Safari／主屏幕 App 效果需实测；模拟触摸测试不等于 iPhone 18 Pro 真机验证。参考 [MDN touch-action](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/touch-action)、[viewport 限制](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/meta/name/viewport) 与 [WebKit gesturestart](https://developer.mozilla.org/en-US/docs/Web/API/Element/gesturestart_event)。
 
-### 应用结构
+### v1.2 动作库与计划编辑
+
+- 根据 [Free Exercise DB](https://github.com/yuhonas/free-exercise-db) 的公开数据整理，固定来源版本并保留原始动作 ID；按 [ACE 动作库](https://www.acefitness.org/resources/everyone/exercise-library/) 的部位与器材分类思路设计筛选，未复制 ACE 教程或图片。许可与修改范围见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- 包含胸、背、肩、肱二头肌、肱三头肌、前臂、腹部 / 核心、臀、大腿前侧 / 后侧 / 内侧、小腿、全身复合。部位筛选以主要训练目标为准，搜索也可匹配辅助肌群。器材按主要器材归类，不表示不需要平凳或支架。
+- 选择器内置于应用缓存，完成更新后离线搜索与选择；仅手动点击来源链接才会访问外站。不发送训练记录或搜索内容。
+- 选择 / 取消动作库会保留计划草稿或添加表单；替换动作不重置已编辑的组数、次数和重量。从库添加优先填入空白动作行。
+- 保留既有模板名称、历史与备份格式。仍按同名动作带入最近记录；自定义改名后不会自动合并到另一个名称的历史。
+- 动作库侧重按次数记录的力量动作，不把平板支撑、跑步等计时项目误记成次数。难度标签取自数据源，并不代表个人适用性；默认组次只是输入初值。
+- 编辑计划的训练分类新增手臂、核心、臀、小腿、上肢、下肢，不局限四分化。
+
+### 技术结构
 
 使用原生 ES Modules、CSS、IndexedDB、Web App Manifest 和 Service Worker。无构建依赖。
 升级静态资源时同时递增 `docs/sw.js` 的缓存版本。新版本准备好后，在应用中保存并更新。
