@@ -385,3 +385,37 @@ main{padding-bottom:var(--page-bottom-gap)}
  .rest-dock .rest-bar{padding:12px 14px}.rest-dock .rest-leading small{font-size:11px}
  .rest-controls{gap:8px}.rest-dock .rest-pause{padding:8px 10px}.rest-dock .rest-actions{gap:5px}
 }
+
+/* v1.4: compact group editing with per-group load modes. */
+.training-weight-field{position:relative;display:block;min-width:0;width:100%}
+.training-weight-field input{width:100%}.training-weight-field.assisted input{padding-left:28px}
+.training-weight-field>span{position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px;color:var(--green);pointer-events:none}
+.workout-modal{padding:24px}.workout-modal .modal-heading{margin-bottom:18px}
+.workout-modal .editor-sets{gap:8px;margin:6px 0 16px}
+.workout-modal .editor-set{padding:8px 6px;border-radius:11px}
+.editor-line,.editor-column-head{display:grid;grid-template-columns:20px 134px minmax(48px,1fr) minmax(42px,.85fr) 22px;align-items:center;gap:4px}
+.editor-column-head{padding:0 7px;font-size:12px;color:var(--muted);margin-top:16px;text-align:center}
+.editor-number{font-size:14px;position:relative;text-align:center;font-variant-numeric:tabular-nums}
+.editor-number i{font-size:10px;color:var(--green);display:block;font-style:normal}
+.editor-line .set-kind-toggles{gap:2px;padding:0;border:0;background:none;border-radius:0}
+.editor-line .set-kind-button{width:32px;min-width:32px;min-height:44px;padding:0;font-size:14px;border:1px solid #dce5d3;background:#fff;border-radius:8px}
+.editor-line .set-kind-button[aria-pressed="true"]{background:var(--dark);border-color:var(--dark);color:#fff;box-shadow:none}
+.workout-modal .editor-weight,.workout-modal .editor-reps{padding:7px 3px;text-align:center;height:44px;background:#fff;border:1px solid #dce5d3;border-radius:8px;font-size:16px;width:100%;min-width:0}
+.workout-modal .editor-weight:disabled{background:#edf1e8;color:#64745c;opacity:1}
+.editor-line .editor-remove{width:22px;min-width:22px;height:44px;padding:2px}.editor-remove .icon{width:16px;height:16px}
+.editor-subgroups{display:grid;gap:6px;margin-top:6px}
+.editor-subline{display:grid;grid-template-columns:158px minmax(48px,1fr) minmax(42px,.85fr) 22px;gap:4px;align-items:center}
+.editor-subline>span{text-align:right;padding-right:8px;font-size:13px;color:var(--muted)}
+.workout-modal .segment-generator{grid-template-columns:1fr 1fr auto;align-items:end;gap:8px;margin:10px 0 0;padding-top:10px;border-top:1px solid var(--line)}
+.workout-modal .segment-generator .field{margin:0;font-size:12px;gap:4px}.workout-modal .segment-generator input{height:42px;padding:8px}
+.workout-modal .segment-generator>.button{grid-column:auto;min-height:42px;padding:8px 12px;font-size:13px}
+.workout-modal .editor-bulk{margin-bottom:8px}.workout-modal .editor-bulk .field{font-size:13px}
+.exercise-heading{align-items:center}.exercise-tools{margin-top:0;margin-bottom:14px}
+@media(max-width:700px){.workout-modal{padding:20px 12px}.workout-modal .modal-actions{bottom:-20px}}
+@media(max-width:360px){
+ .editor-line{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr) 22px;row-gap:8px}
+ .editor-line .set-kind-toggles{grid-column:2/4;justify-content:flex-end}
+ .editor-line .editor-remove{grid-column:4;grid-row:1}.editor-line .editor-weight{grid-column:2;grid-row:2}.editor-line .editor-reps{grid-column:3;grid-row:2}
+ .editor-subline{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr) 22px}.editor-subline>span{padding:0;font-size:11px}
+ .editor-column-head{grid-template-columns:20px minmax(0,1fr) minmax(0,1fr) 22px}.editor-column-head>span:nth-child(2){display:none}
+}

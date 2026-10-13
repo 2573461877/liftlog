@@ -1,4 +1,4 @@
-export const VERSION = 3;
+export const VERSION = 4;
 export const LOAD_MODES = {weight:'负重', bodyweight:'自重', assisted:'辅助重量'};
 export const SET_KINDS = {normal:'普通组', ascending:'递增组', descending:'递减组', custom:'自定义子组'};
 export const ENERGY_METHOD = 'compendium-2024-v1';
@@ -43,15 +43,18 @@ export function totals(session) {
   const sets=exercises.flatMap(e=>e.sets).filter(setComplete);
   const reps=exercises.reduce((n,e)=>n+e.sets.flatMap(completedParts).reduce((r,s)=>r+s.reps,0),0);
   // Assistance is not lifted load, and body mass is deliberately not estimated.
-  const volume=exercises.filter(e=>(e.mode||'weight')==='weight').reduce((n,e)=>n+e.sets.flatMap(completedParts).reduce((v,s)=>v+s.weight*s.reps,0),0);
+  const volume=exercises.reduce((n,e)=>n+e.sets.filter(s=>setMode(s,e.mode)==='weight').flatMap(completedParts).reduce((v,s)=>v+s.weight*s.reps,0),0);
   return {sets:sets.length,reps,volume};
 }
 export const partsOf = s => s.segments?.length ? s.segments : [s];
 export const completedParts = s => partsOf(s).filter(p=>p.done);
 export const setComplete = s => partsOf(s).every(p=>p.done);
 export const hasCompleted = e => e.sets.some(s=>completedParts(s).length);
+export const setMode = (s, fallback='weight') => s.mode || fallback || 'weight';
+export const exerciseModes = e => [...new Set((e.sets instanceof Array?e.sets:e.setPlan||[{}]).map(s=>setMode(s,e.mode)))];
 export function freshSet(s={weight:0,reps:10}, mode='weight') {
-  return {id:uid(),weight:mode==='bodyweight'?0:s.weight,reps:s.reps,done:false,
+  mode=setMode(s,mode);
+  return {id:uid(),...(s.mode?{mode:s.mode}:{}),weight:mode==='bodyweight'?0:s.weight,reps:s.reps,done:false,
     ...(s.kind && s.kind!=='normal'?{kind:s.kind,segments:partsOf(s).map(p=>({weight:mode==='bodyweight'?0:p.weight,reps:p.reps,done:false}))}:{})};
 }
 export function completedExercise(e) {
@@ -93,6 +96,7 @@ export function generateSegments(kind,base,step,count,reps) {
 }
 export function toggleSetKind(set, requested, mode='weight') {
   if(!['ascending','descending'].includes(requested))throw new Error('无效的组类型');
+  mode=setMode(set,mode);
   const first=partsOf(set)[0], kind=set.kind===requested?'normal':requested;
   const result={...set,kind,weight:mode==='bodyweight'?0:first.weight,reps:first.reps,done:false};
   if(kind==='normal')delete result.segments;
@@ -102,10 +106,42 @@ export function toggleSetKind(set, requested, mode='weight') {
   }
   return result;
 }
+// Modes belong to groups; legacy exercise modes remain the fallback.
+export function toggleSetMode(set, requested, fallback='weight') {
+  if(!['bodyweight','assisted'].includes(requested))throw new Error('无效的重量类型');
+  const result=clone(set);result.mode=setMode(set,fallback)===requested?'weight':requested;
+  if(result.mode==='bodyweight'){result.weight=0;partsOf(result).forEach(p=>p.weight=0);}
+  return result;
+}
+function syncSetValues(s) {
+  if(s.segments){s.weight=s.segments[0].weight;s.reps=s.segments[0].reps;s.done=setComplete(s);}
+}
+function assignGroupValue(s,field,value,unfinishedOnly=false,baseline=s) {
+  const originals=partsOf(baseline).map(p=>p[field]), delta=value-originals[0];
+  partsOf(s).forEach((p,i)=>{if(!unfinishedOnly||!p.done)p[field]=field==='weight'?Math.round(num(originals[i]+delta,0,2000)*100)/100:value;});
+  syncSetValues(s);
+}
+export function applyBulkValue(e,field,value,unfinishedOnly=false,baseline=null) {
+  if(!['weight','reps'].includes(field))throw new Error('无效的组字段');
+  value=field==='reps'?Math.round(num(value,1,999)):num(value,0,2000);
+  e.sets.forEach((s,i)=>{if(field!=='weight'||setMode(s,e.mode)!=='bodyweight')assignGroupValue(s,field,value,unfinishedOnly,baseline?.sets[i]||s);});
+}
+// Update the edited value and only later unfinished work, never another exercise.
+// Keep ramp offsets; kilograms do not propagate between load and assistance.
+export function updateFollowingSets(e,index,partIndex,field,value,baseline=null) {
+  const source=e.sets[index];if(!source||!['weight','reps'].includes(field))return;
+  const mode=setMode(source,e.mode);if(field==='weight'&&mode==='bodyweight')return;
+  const parts=partsOf(source),at=partIndex??0,target=parts[at];if(!target)return;
+  value=field==='reps'?Math.round(num(value,1,999)):num(value,0,2000);
+  const originals=partsOf(baseline?.sets[index]||source).map(p=>p[field]), delta=value-originals[at];target[field]=value;
+  parts.slice(at+1).forEach((p,j)=>{if(!p.done)p[field]=field==='weight'?Math.round(num(originals[at+j+1]+delta,0,2000)*100)/100:value;});
+  syncSetValues(source);
+  e.sets.slice(index+1).forEach((s,j)=>{if(field!=='weight'||setMode(s,e.mode)===mode)assignGroupValue(s,field,value,true,baseline?.sets[index+j+1]||s);});
+}
 export function exerciseTrend(history,name,mode='weight') {
   return [...history].sort((a,b)=>a.finishedAt-b.finishedAt).flatMap(h=>{
-    const exercises=h.exercises.filter(e=>e.name.trim()===name.trim()&&(e.mode||'weight')===mode);
-    const sets=exercises.flatMap(e=>e.sets).filter(s=>completedParts(s).length);
+    const exercises=h.exercises.filter(e=>e.name.trim()===name.trim());
+    const sets=exercises.flatMap(e=>e.sets.filter(s=>setMode(s,e.mode)===mode)).filter(s=>completedParts(s).length);
     if(!sets.length)return [];
     const parts=sets.flatMap(completedParts);
     // One equally weighted contribution per group; complex groups first average their completed subgroups.
@@ -119,9 +155,11 @@ export function createSession(template, history = [], now = Date.now(), profile 
     exercises: template.exercises.map(e => { const prev = lastExercise(history, e.name);
       const recent=prev?completedExercise(prev):null;
       const mode=e.mode||recent?.mode||'weight';
-      const compatible=!recent || (recent.mode||'weight')===mode;
       const setPlan=e.setPlan||Array.from({length:e.sets},()=>({weight:e.weight,reps:e.reps}));
-      return { id: uid(), name: e.name, ...(e.mode||recent?.mode?{mode}:{}), sets:setPlan.map((s,i)=>freshSet(compatible?(recent?.sets[i]??s):s,mode)) };
+      return { id: uid(), name: e.name, ...(e.mode||recent?.mode?{mode}:{}), sets:setPlan.map((s,i)=>{
+        const previous=recent?.sets[i], currentMode=setMode(s,mode);
+        return freshSet(previous&&setMode(previous,recent.mode)===currentMode?{...previous,...(s.mode?{mode:s.mode}:{})}:s,currentMode);
+      }) };
     })
   };
 }
@@ -172,7 +210,7 @@ export function restRemaining(rest, now = Date.now()) { return rest ? Math.max(0
 export function parseBackup(value) {
   const source = typeof value === 'string' ? JSON.parse(value) : value;
   const data = source?.app === 'LiftLog' ? source.data : source;
-  if (!data || ![1, 2, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
+  if (!data || ![1, 2, 3, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
   const text = (v, n = 120) => { if (typeof v !== 'string' || v.length > n) throw new Error('备份文本字段无效'); return v; };
   const number = (v, min, max, integer = false) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max || (integer && !Number.isInteger(v))) throw new Error('备份数值字段无效'); return v; };
   const list = (v, max) => { if (!Array.isArray(v) || v.length > max) throw new Error('备份列表无效或过大'); return v; };
@@ -186,7 +224,7 @@ export function parseBackup(value) {
   const id = v => { const s = text(v, 100); if (!s || ids.has(s)) throw new Error('备份包含重复或空的记录标识'); ids.add(s); return s; };
   const mode = e => {if(e.mode==null)return {};if(!Object.hasOwn(LOAD_MODES,e.mode))throw new Error('备份重量类型无效');return {mode:e.mode};};
   const set = (s,planned=false) => {
-    const base={...(planned?{}:{id:id(s.id)}),weight:number(s.weight,0,2000),reps:number(s.reps,1,999,true),...(planned?{}:{done:bool(s.done)})};
+    const base={...(planned?{}:{id:id(s.id)}),weight:number(s.weight,0,2000),reps:number(s.reps,1,999,true),...mode(s),...(planned?{}:{done:bool(s.done)})};
     if(s.kind!=null&&!Object.hasOwn(SET_KINDS,s.kind))throw new Error('备份组类型无效');
     if(s.kind&&s.kind!=='normal') {
       const segments=list(s.segments,8).map(p=>({weight:number(p.weight,0,2000),reps:number(p.reps,1,999,true),done:planned?false:bool(p.done)}));
@@ -223,6 +261,6 @@ export function backupJSON(state) { return JSON.stringify({ app: 'LiftLog', vers
 export function historyCSV(history) {
   const cell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
   const rows = [['日期', '训练', '动作', '组序号', '子组序号', '重量类型', '组类型', '重量(kg)', '次数', '容量(kg)', '备注']];
-  [...history].sort((a, b) => b.startedAt - a.startedAt).forEach(h => h.exercises.forEach(e => e.sets.forEach((s, i) => { partsOf(s).forEach((p,j)=>{if(p.done)rows.push([localDate(h.startedAt), h.name, e.name, i+1,s.segments?j+1:'',LOAD_MODES[e.mode||'weight'],SET_KINDS[s.kind||'normal'],p.weight,p.reps,(e.mode||'weight')==='weight'?p.weight*p.reps:0,h.note]);}); })));
+  [...history].sort((a, b) => b.startedAt - a.startedAt).forEach(h => h.exercises.forEach(e => e.sets.forEach((s, i) => { const mode=setMode(s,e.mode);partsOf(s).forEach((p,j)=>{if(p.done)rows.push([localDate(h.startedAt), h.name, e.name, i+1,s.segments?j+1:'',LOAD_MODES[mode],SET_KINDS[s.kind||'normal'],p.weight,p.reps,mode==='weight'?p.weight*p.reps:0,h.note]);}); })));
   return '\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n');
 }
