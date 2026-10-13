@@ -1,4 +1,4 @@
-const CACHE = 'liftlog-shell-v1.3.3';
+const CACHE = 'liftlog-shell-v1.3.4';
 const FILES = ['./', './index.html', './app.js', './exercise-library.js', './domain.js', './storage.js', './styles.css', './manifest.webmanifest', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 self.addEventListener('install',event=>{event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(FILES)));});
 self.addEventListener('activate',event=>{event.waitUntil((async()=>{for(const key of await caches.keys())if(key.startsWith('liftlog-shell-')&&key!==CACHE)await caches.delete(key);await self.clients.claim();})());});

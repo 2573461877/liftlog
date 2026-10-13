@@ -17,6 +17,7 @@ const paths = {
   arrow: '<path d="M4 12h16m-6-6 6 6-6 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
+  pause: '<path d="M9 5v14M15 5v14"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
   edit: '<path d="m15 4 5 5M4 20l5-1L20 8a3.5 3.5 0 0 0-5-5L4 14z"/>',
@@ -35,15 +36,31 @@ const icon = (name, cls = '') => `<svg class="icon ${cls}" viewBox="0 0 24 24" f
 const esc = v => String(v ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
 const fmt = n => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 }).format(n || 0);
 const dateLabel = t => new Date(t).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' });
+const shortDateLabel = t => {const day=localDate(t);return (day.slice(0,4)===localDate().slice(0,4)?day.slice(5):day).replaceAll('-','/');};
 const duration = s => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 let state, view = location.hash.slice(1) || 'home', saveQueue = Promise.resolve(), saveError = false, readOnly = false, pendingSaves = 0;
 let toastTimeout, confirmResolve, pendingUpdate, installPrompt, wakeLock, audioContext, selectedHistory = null;
 let historyFilter = '全部', historyQuery = '', historyMonth = '', templateDraft, pendingBackup;
-let orderDraft = [], historyManage = false, historySelection = new Set(), historyEditing = false;
+let historyManage = false, historySelection = new Set(), historyEditing = false;
 let workoutDraft=null, workoutContext=null, trendName='', trendMode='weight';
 let modalBack=null, modalPageLock=null, modalRenderId=0;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('liftlog-changes') : null;
 let offlineReady = false;
+const layoutObserver=typeof ResizeObserver==='function'?new ResizeObserver(syncLayoutMetrics):null;
+window.addEventListener('resize',syncLayoutMetrics);
+
+function syncLayoutMetrics() {
+  const nav=document.querySelector('.bottom-nav'), dock=document.querySelector('.rest-dock'), card=dock?.querySelector('.rest-bar');
+  const setSize=(name,value)=>{const next=`${Math.ceil(value)}px`;if(document.documentElement.style.getPropertyValue(name)!==next)document.documentElement.style.setProperty(name,next);};
+  if(nav)setSize('--bottom-nav-height',nav.getBoundingClientRect().height);
+  setSize('--rest-dock-height',dock?.getBoundingClientRect().height||0);
+  const svg=card?.querySelector('.rest-progress-ring');if(!svg)return;
+  const {width:w,height:h}=card.getBoundingClientRect();if(w<40||h<40)return;
+  const inset=3,r=15,right=w-inset,bottom=h-inset;
+  const d=`M ${w/2} ${inset} H ${right-r} A ${r} ${r} 0 0 1 ${right} ${inset+r} V ${bottom-r} A ${r} ${r} 0 0 1 ${right-r} ${bottom} H ${inset+r} A ${r} ${r} 0 0 1 ${inset} ${bottom-r} V ${inset+r} A ${r} ${r} 0 0 1 ${inset+r} ${inset} H ${w/2}`;
+  svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+  svg.querySelectorAll('path').forEach(path=>path.setAttribute('d',d));
+}
 
 function toast(message) { const el = document.querySelector('#toast'); el.textContent = message; el.classList.add('show'); clearTimeout(toastTimeout); toastTimeout = setTimeout(() => el.classList.remove('show'), 3200); }
 function updateSaveLabel() { document.querySelectorAll('[data-save-label]').forEach(el => { el.textContent = saveError ? '保存失败 · 请立即导出备份' : pendingSaves ? '正在保存…' : '已自动保存到本机'; el.classList.toggle('error', saveError); }); if(saveError&&!document.querySelector('#save-alert'))document.querySelector('main')?.insertAdjacentHTML('afterbegin','<div id="save-alert" class="notice warning" role="alert">记录尚未成功保存。请到设置中导出完整备份，勿关闭本页。</div>'); if(!saveError)document.querySelector('#save-alert')?.remove(); }
@@ -71,6 +88,9 @@ function render() {
   document.documentElement.classList.toggle('training-page',view==='train'&&Boolean(state.active));
   updateSaveLabel();
   updateTimers();
+  layoutObserver?.disconnect();
+  document.querySelectorAll('.bottom-nav,.rest-dock,.rest-bar').forEach(el=>layoutObserver?.observe(el));
+  syncLayoutMetrics();
 }
 function homeView() {
   const w = weeklyStats(state.history); const suggested = state.templates[state.history.length % Math.max(1, state.templates.length)];
@@ -92,13 +112,19 @@ function trainView() {
   return `${heading('SESSION IN PROGRESS',esc(s.name),'专注当前这一组。完成后点一下右侧勾选。',button('finish','完成训练','check','button primary'))}${restCard(s)}<div class="session-summary"><div>${icon('clock')}<span data-elapsed>${duration(Math.floor(sessionMilliseconds(s)/1000))}</span></div><div><strong data-total-sets>${stat.sets}</strong> / ${all} 组</div><div><strong data-total-volume>${fmt(stat.volume)}</strong> kg 容量</div><span class="autosave" data-save-label>已自动保存到本机</span></div>${sessionDashboard(s)}<div class="session-exercises">${s.exercises.map((e,i) => exerciseCard(e,i)).join('')}</div><div class="session-bottom">${button('add-exercise','添加动作','plus','button secondary')}<p class="builder-hint">容量仅统计负重组；自重和辅助重量不计入。子组可分别完成，全部完成才计为一个完整组。</p><label class="field session-note">训练备注<textarea id="session-note" rows="2" maxlength="2000" placeholder="今天的状态、动作感受，或下次想调整的地方…">${esc(s.note)}</textarea></label><div class="session-end">${button('discard','放弃训练','trash','button secondary danger-outline')}${button('finish','完成训练','check','button primary')}</div></div>`;
 }
 function restCard(s) {
-  return `<div class="rest-dock"><section aria-label="组间休息计时" class="rest-bar ${s.rest ? 'running' : ''}"><div class="rest-leading">${icon('clock')}<div><span data-rest-label>组间休息</span><strong data-rest-time>${s.rest ? duration(restRemaining(s.rest)) : duration(state.settings.restSeconds)}</strong></div><small data-rest-caption>${s.rest ? '呼吸，准备下一组' : '完成一组后自动开始'}</small></div><div class="rest-actions">${button('rest-minus','−15s','','chip-button',!s.rest ? 'disabled' : '')}${button('rest-plus','+15s','','chip-button',!s.rest ? 'disabled' : '')}${button(s.rest ? 'rest-stop' : 'rest-start',s.rest ? '结束' : '开始','','button small')}</div></section></div>`;
+  const p=progress(s), paused=s.pausedAt!=null;
+  return `<div class="rest-dock"><section aria-label="组间休息与训练进度" class="rest-bar ${s.rest?'running':''} ${paused?'paused':''}">
+    <div class="rest-progress-border" role="progressbar" aria-label="整体训练进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.percent}" aria-valuetext="${p.percent}%，已完成 ${p.done} 组，共 ${p.total} 组"><svg class="rest-progress-ring" aria-hidden="true"><path class="rest-progress-track"/><path class="rest-progress-value" pathLength="100" stroke-dasharray="100" stroke-dashoffset="${100-p.percent}" ${p.percent===0?'visibility="hidden"':''}/></svg></div>
+    <div class="rest-leading">${icon('clock')}<div><span data-rest-label>组间休息</span><strong data-rest-time>${s.rest?duration(restRemaining(s.rest,s.pausedAt??Date.now())):duration(state.settings.restSeconds)}</strong><small data-rest-caption>${paused?'训练与休息计时已冻结':s.rest?'呼吸，准备下一组':'完成一组后自动开始'}</small></div></div>
+    <div class="rest-completion"><span>训练进度</span><strong>${p.percent}<small>%</small></strong><span>${p.done} / ${p.total} 组</span></div>
+    <div class="rest-controls"><div class="rest-actions">${button('rest-minus','−15s','','chip-button',!s.rest?'disabled':'')}${button('rest-plus','+15s','','chip-button',!s.rest?'disabled':'')}${button(s.rest?'rest-stop':'rest-start',s.rest?'结束':'开始','','button small')}</div>${button('pause-session',paused?'继续':'暂停',paused?'arrow':'pause','button secondary rest-pause',`aria-label="${paused?'继续计时':'暂停训练'}" aria-pressed="${paused}"`)}</div>
+  </section></div>`;
 }
 function exerciseCard(e, i) {
   const prev=recentExercise(state.history,e.name), mode=e.mode||'weight';
   return `<article class="exercise-card" data-exercise="${e.id}"><div class="exercise-heading"><span class="exercise-index">${String(i+1).padStart(2,'0')}</span><div><h2>${esc(e.name)}</h2><p>${prev?`上次 ${prev.sets.length} 组 · ${loadText(prev.sets[0],prev.mode)}`:'首次记录 · 按实际情况设置'}</p></div>${button('remove-exercise','','trash','icon-button muted',`data-id="${e.id}" aria-label="移除${esc(e.name)}"`)}</div><div class="exercise-tools"><span class="load-badge">${LOAD_MODES[mode]}</span><div>${button('exercise-trend','历史','chart','text-button',`data-name="${esc(e.name)}" data-mode="${mode}"`)}${button('edit-workout','逐组设置','edit','text-button',`data-id="${e.id}"`)}${moveButtons('session-move',i,state.active.exercises.length)}</div></div><div class="set-table"><div class="set-head"><span>组</span><span>${mode==='assisted'?'辅助 kg':mode==='bodyweight'?'自重':'重量 kg'}</span><span>次数</span><span>完成</span><span></span></div>${e.sets.map((s,j)=>trainingSet(e,s,j)).join('')}</div>${button('add-set','添加一组','plus','add-set',`data-id="${e.id}"`)}</article>`;
 }
-function historyRow(h, compact = false) { const t = totals(h); return `<button class="history-row ${compact ? 'compact' : ''}" data-action="history-detail" data-id="${h.id}">${badge(h.group)}<span class="history-main"><strong>${esc(h.name)}</strong><small>${dateLabel(h.startedAt)}${compact ? '' : ` · ${new Date(h.startedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}`} · ${t.sets} 组</small></span><span class="history-volume">${fmt(t.volume)}<small>kg</small></span>${icon('arrow')}</button>`; }
+function historyRow(h, compact = false) { const t=totals(h); return `<button class="history-row ${compact?'compact':''}" data-action="history-detail" data-id="${h.id}" aria-label="${esc(h.name)}，${dateLabel(h.startedAt)}，${t.sets} 组">${badge(h.group)}<span class="history-main"><strong>${esc(h.name)}</strong><small><time datetime="${new Date(h.startedAt).toISOString()}" title="${dateLabel(h.startedAt)}">${shortDateLabel(h.startedAt)}${compact?'':` ${new Date(h.startedAt).toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit'})}`}</time><span>${t.sets} 组</span></small></span>${icon('arrow')}</button>`; }
 function historyView() {
   if (selectedHistory) return historyDetail();
   const groups = ['全部', ...new Set(state.history.map(h=>h.group))];
@@ -120,7 +146,7 @@ function historyDetail() {
 }
 function settingsView() {
   const s=state.settings;
-return `${heading('YOUR SPACE, YOUR RULES','按你的习惯来。','简单设置，让记录更顺手。')}<div class="settings-grid">${profilePanel()}<section class="panel settings-panel"><h2>${icon('settings')}训练偏好</h2><label class="setting-row"><span><strong>每周训练目标</strong><small>用来显示本周进度</small></span><select data-setting="weeklyGoal" aria-label="每周训练目标">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${s.weeklyGoal===n?'selected':''}>${n} 次</option>`).join('')}</select></label><label class="setting-row"><span><strong>默认组间休息</strong><small>训练中可临时增减 15 秒</small></span><select data-setting="restSeconds" aria-label="默认组间休息">${[...new Set([30,45,60,90,120,150,180,240,300,s.restSeconds])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${s.restSeconds===n?'selected':''}>${n} 秒</option>`).join('')}</select></label>${settingToggle('autoRest','自动开始休息','勾选完成一组后启动倒计时',s.autoRest)}${settingToggle('sound','前台提示音','仅在页面运行且浏览器允许时播放',s.sound)}${settingToggle('keepAwake','训练时保持亮屏','需要浏览器支持；切到后台会失效',s.keepAwake)}<p class="setting-footnote">计时按结束时间恢复，不依赖后台持续运行。锁屏后不保证准时响铃；请勿将此功能当作系统闹钟。</p></section><section class="panel settings-panel"><h2>${icon('shield')}数据与备份</h2><div class="data-summary"><strong>${state.history.length}<small>次训练</small></strong><strong>${state.templates.length}<small>个计划</small></strong><strong>本机<small>存储位置</small></strong></div><p class="subtle">训练记录保存在当前设备的浏览器中，不上传 GitHub、不自动同步到其他设备。清理网站数据或换手机前，请先备份。</p><div class="backup-status">${icon('clock')}<span>${s.lastBackupAt ? `上次导出 ${new Date(s.lastBackupAt).toLocaleString('zh-CN')}` : '尚未导出备份 · 建议每周备份一次'}</span></div><div class="backup-actions">${button('export-json','导出完整备份','down','button primary')}${button('import-json','恢复备份','up','button secondary')}${button('export-csv','导出历史 CSV','chart','button secondary')}</div>${button('persist-storage','申请持久化存储','shield','text-button wide-gap')}<p class="setting-footnote">持久化申请是否批准由浏览器决定，不能替代备份。导出的文件请保存到你选定的位置（如 iCloud Drive 或电脑 E 盘）。</p></section><section class="panel settings-panel install-panel"><h2>${icon('plus')}添加到 iPhone 主屏幕</h2><ol><li>用 <strong>Safari</strong> 打开本站。</li><li>点“分享”，选择“添加到主屏幕”。</li><li>如有“作为网页 App 打开”选项，请打开。</li><li>打开图标，联网等待“离线已就绪”，再测试断网使用。</li></ol>${installPrompt ? button('install','安装练记','plus','button primary') : ''}<p class="setting-footnote">建议固定使用主屏幕入口与同一网址，避免在不同浏览器或不同站点之间分散记录。</p></section><section class="panel settings-panel about-panel"><div class="about-brand"><img src="./icons/icon.svg" alt=""><div><h2>练记 LiftLog</h2><p>每一组，都算数。</p></div></div><p class="subtle">v1.3.3 · 无广告 · 无第三方追踪<br>离线优先，关注训练本身。</p><p class="setting-footnote">重量统一为 kg；自重、辅助重量请在逐组设置中选择。单侧动作的重量与次数口径请始终保持一致。</p>${button('check-update','检查应用更新','','text-button')}</section></div>`;
+return `${heading('YOUR SPACE, YOUR RULES','按你的习惯来。','简单设置，让记录更顺手。')}<div class="settings-grid">${profilePanel()}<section class="panel settings-panel"><h2>${icon('settings')}训练偏好</h2><label class="setting-row"><span><strong>每周训练目标</strong><small>用来显示本周进度</small></span><select data-setting="weeklyGoal" aria-label="每周训练目标">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${s.weeklyGoal===n?'selected':''}>${n} 次</option>`).join('')}</select></label><label class="setting-row"><span><strong>默认组间休息</strong><small>训练中可临时增减 15 秒</small></span><select data-setting="restSeconds" aria-label="默认组间休息">${[...new Set([30,45,60,90,120,150,180,240,300,s.restSeconds])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${s.restSeconds===n?'selected':''}>${n} 秒</option>`).join('')}</select></label>${settingToggle('autoRest','自动开始休息','勾选完成一组后启动倒计时',s.autoRest)}${settingToggle('sound','前台提示音','仅在页面运行且浏览器允许时播放',s.sound)}${settingToggle('keepAwake','训练时保持亮屏','需要浏览器支持；切到后台会失效',s.keepAwake)}<p class="setting-footnote">计时按结束时间恢复，不依赖后台持续运行。锁屏后不保证准时响铃；请勿将此功能当作系统闹钟。</p></section><section class="panel settings-panel"><h2>${icon('shield')}数据与备份</h2><div class="data-summary"><strong>${state.history.length}<small>次训练</small></strong><strong>${state.templates.length}<small>个计划</small></strong><strong>本机<small>存储位置</small></strong></div><p class="subtle">训练记录保存在当前设备的浏览器中，不上传 GitHub、不自动同步到其他设备。清理网站数据或换手机前，请先备份。</p><div class="backup-status">${icon('clock')}<span>${s.lastBackupAt ? `上次导出 ${new Date(s.lastBackupAt).toLocaleString('zh-CN')}` : '尚未导出备份 · 建议每周备份一次'}</span></div><div class="backup-actions">${button('export-json','导出完整备份','down','button primary')}${button('import-json','恢复备份','up','button secondary')}${button('export-csv','导出历史 CSV','chart','button secondary')}</div>${button('persist-storage','申请持久化存储','shield','text-button wide-gap')}<p class="setting-footnote">持久化申请是否批准由浏览器决定，不能替代备份。导出的文件请保存到你选定的位置（如 iCloud Drive 或电脑 E 盘）。</p></section><section class="panel settings-panel install-panel"><h2>${icon('plus')}添加到 iPhone 主屏幕</h2><ol><li>用 <strong>Safari</strong> 打开本站。</li><li>点“分享”，选择“添加到主屏幕”。</li><li>如有“作为网页 App 打开”选项，请打开。</li><li>打开图标，联网等待“离线已就绪”，再测试断网使用。</li></ol>${installPrompt ? button('install','安装练记','plus','button primary') : ''}<p class="setting-footnote">建议固定使用主屏幕入口与同一网址，避免在不同浏览器或不同站点之间分散记录。</p></section><section class="panel settings-panel about-panel"><div class="about-brand"><img src="./icons/icon.svg" alt=""><div><h2>练记 LiftLog</h2><p>每一组，都算数。</p></div></div><p class="subtle">v1.3.4 · 无广告 · 无第三方追踪<br>离线优先，关注训练本身。</p><p class="setting-footnote">重量统一为 kg；自重、辅助重量请在逐组设置中选择。单侧动作的重量与次数口径请始终保持一致。</p>${button('check-update','检查应用更新','','text-button')}</section></div>`;
 }
 function settingToggle(key, title, desc, checked) { return `<label class="setting-row"><span><strong>${title}</strong><small>${desc}</small></span><input class="switch" type="checkbox" data-setting="${key}" aria-label="${title}" ${checked?'checked':''}></label>`; }
 function lockModalPage() {
@@ -298,7 +324,7 @@ function updateTimers(){
   const r=s.rest;
   document.querySelectorAll('[data-rest-label]').forEach(el=>el.textContent=s.pausedAt!=null?'训练已暂停':r&&restRemaining(r,now)===0?'休息结束':'组间休息');
   document.querySelectorAll('[data-rest-time]').forEach(el=>el.textContent=duration(r?restRemaining(r,now):state.settings.restSeconds));
-  if(s.pausedAt!=null){document.querySelectorAll('[data-rest-caption]').forEach(el=>el.textContent='训练已暂停');return;}
+  if(s.pausedAt!=null){document.querySelectorAll('[data-rest-caption]').forEach(el=>el.textContent='训练与休息计时已冻结');return;}
   if(r&&restRemaining(r,now)===0){document.querySelectorAll('[data-rest-caption]').forEach(el=>el.textContent='休息结束，准备下一组');if(!r.notified){r.notified=true;if(!readOnly)persist();beep();toast('休息结束，准备下一组');}}
 }
 const findExercise=id=>state.active?.exercises.find(e=>e.id===id);
@@ -402,12 +428,8 @@ function moveItem(items, index, direction) {
 function moveButtons(action,index,length) {
   return `<button type="button" class="order-button" data-action="${action}" data-index="${index}" data-direction="-1" aria-label="上移动作${index+1}" ${index===0?'disabled':''}>↑</button><button type="button" class="order-button" data-action="${action}" data-index="${index}" data-direction="1" aria-label="下移动作${index+1}" ${index===length-1?'disabled':''}>↓</button>`;
 }
-function showOrderModal() {
-  showModal('调整动作顺序',`<p class="subtle">使用箭头调整先后顺序；重量、次数和完成状态会一起保留。</p><ol class="order-list">${orderDraft.map((id,i)=>`<li><span class="order-number">${i+1}</span><strong>${esc(findExercise(id)?.name)}</strong><div>${moveButtons('order-move',i,orderDraft.length)}</div></li>`).join('')}</ol><div class="modal-actions">${button('close-modal','取消','','button secondary')}${button('order-save','保存顺序','','button primary')}</div>`);
-}
 function sessionDashboard(s) {
-  const p=progress(s);
-  return `<section class="session-dashboard"><div class="progress-card"><div class="progress-top"><div><span class="eyebrow">本次训练进度</span><strong>${p.percent}<small>%</small></strong></div><span>${p.done} / ${p.total} 组</span></div><div class="training-progress" role="progressbar" aria-label="整体训练进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p.percent}" aria-valuetext="已完成 ${p.done} 组，共 ${p.total} 组"><i style="width:${p.percent}%"></i></div><div class="training-tools">${button('pause-session',s.pausedAt!=null?'继续计时':'暂停训练','clock','text-button')}${button('reorder-exercises','调整顺序','plans','text-button',s.exercises.length<2?'disabled':'')}</div>${s.pausedAt!=null?'<p class="pause-notice" role="status">训练已暂停 · 时长、休息和能耗计时已冻结</p>':''}</div>${energyCard(s,true)}</section>`;
+  return `<section class="session-dashboard">${energyCard(s,true)}</section>`;
 }
 function energyCard(s, live) {
   const energy=estimateEnergy(s), p=s.energyProfile;
@@ -441,9 +463,6 @@ function historyManagement(filtered) {
 async function handleNewAction(action,el) {
   if(action==='edit-profile'){profileModal(el.dataset.current==='true');return true;}
   if(action==='pause-session'){togglePause(state.active);await persist();render();return true;}
-  if(action==='reorder-exercises'){orderDraft=state.active.exercises.map(e=>e.id);showOrderModal();return true;}
-  if(action==='order-move'){moveItem(orderDraft,Number(el.dataset.index),Number(el.dataset.direction));showOrderModal();return true;}
-  if(action==='order-save'){state.active.exercises=orderDraft.map(findExercise);await persist();dismissModal();render();toast('本次动作顺序已保存；计划模板不变');return true;}
   if(action==='manage-history'){historyManage=!historyManage;historySelection.clear();render();return true;}
   if(action==='select-visible-history'){document.querySelectorAll('[data-history-id]').forEach(input=>historySelection.add(input.dataset.historyId));render();return true;}
   if(action==='delete-selected-history'){
