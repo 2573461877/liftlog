@@ -127,6 +127,10 @@ export function estimateEnergy(session, now = Date.now()) {
   // Standard MET convention: 1 MET ≈ 1 kcal/kg/hour. Net excludes 1 MET of rest.
   return {active:Math.round((p.met - 1) * p.weightKg * hours), total:Math.round(p.met * p.weightKg * hours), minutes:hours * 60};
 }
+export function energySummary(session, now = Date.now()) {
+  const estimate=estimateEnergy(session,now), manual=session?.manualEnergy;
+  return {kcal:manual?manual.kcal:(estimate?.active??null),type:manual?.type||'active',manual:Boolean(manual),estimate};
+}
 export function weekDays(now = Date.now()) {
   const d = new Date(now); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - (d.getDay() + 6) % 7);
   return Array.from({ length: 7 }, (_, i) => { const day = new Date(d); day.setDate(day.getDate() + i); return localDate(day); });
@@ -175,6 +179,10 @@ export function parseBackup(value) {
     const result = { id: id(s.id), templateId: text(s.templateId || '', 100), name: text(s.name), group: text(s.group, 20), startedAt, finishedAt, note: text(s.note || '', 2000), rest: null,
       pausedMs, pausedAt, energyProfile:profile(s.energyProfile, true),
       exercises: list(s.exercises, 50).map(e => ({ id: id(e.id), name: text(e.name),...mode(e), sets: list(e.sets, 50).map(s=>set(s)) })) };
+    if(s.manualEnergy!=null){
+      if(!['active','total'].includes(s.manualEnergy.type))throw new Error('手动热量类型无效');
+      result.manualEnergy={type:s.manualEnergy.type,kcal:number(s.manualEnergy.kcal,0,100000)};
+    }
     if (!active && !result.exercises.some(hasCompleted)) throw new Error('历史记录没有已完成组');
     return result;
   };

@@ -1,7 +1,7 @@
 import { uid, clone, initialState, localDate, totals, lastExercise, createSession, finishSession, weekDays, weeklyStats, restRemaining, parseBackup, backupJSON, historyCSV, num, ENERGY_METHOD, INTENSITIES, sessionMilliseconds, togglePause, progress, estimateEnergy } from './domain.js';
 import { openStore, loadState, saveState } from './storage.js';
 import { EXERCISES, BODY_PARTS, EQUIPMENT, filterExercises } from './exercise-library.js';
-import { LOAD_MODES, SET_KINDS, partsOf, completedParts, setComplete, hasCompleted, freshSet, recentExercise, exerciseDraft, templateExercise, sessionToTemplate, generateSegments, exerciseTrend } from './domain.js';
+import { LOAD_MODES, SET_KINDS, partsOf, completedParts, setComplete, hasCompleted, freshSet, recentExercise, exerciseDraft, templateExercise, sessionToTemplate, generateSegments, exerciseTrend, energySummary } from './domain.js';
 
 let libraryContext=null, libraryFilters={query:'',part:'',equipment:''};
 const PLAN_GROUPS=['胸','背','腿','肩','手臂','核心','臀','小腿','上肢','下肢','全身','自定义'];
@@ -41,6 +41,7 @@ let toastTimeout, confirmResolve, pendingUpdate, installPrompt, wakeLock, audioC
 let historyFilter = '全部', historyQuery = '', historyMonth = '', templateDraft, pendingBackup;
 let orderDraft = [], historyManage = false, historySelection = new Set(), historyEditing = false;
 let workoutDraft=null, workoutContext=null, trendName='', trendMode='weight';
+let modalBack=null, modalPageLock=null, modalRenderId=0;
 const channel = 'BroadcastChannel' in window ? new BroadcastChannel('liftlog-changes') : null;
 let offlineReady = false;
 
@@ -119,10 +120,38 @@ function historyDetail() {
 }
 function settingsView() {
   const s=state.settings;
-return `${heading('YOUR SPACE, YOUR RULES','按你的习惯来。','简单设置，让记录更顺手。')}<div class="settings-grid">${profilePanel()}<section class="panel settings-panel"><h2>${icon('settings')}训练偏好</h2><label class="setting-row"><span><strong>每周训练目标</strong><small>用来显示本周进度</small></span><select data-setting="weeklyGoal" aria-label="每周训练目标">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${s.weeklyGoal===n?'selected':''}>${n} 次</option>`).join('')}</select></label><label class="setting-row"><span><strong>默认组间休息</strong><small>训练中可临时增减 15 秒</small></span><select data-setting="restSeconds" aria-label="默认组间休息">${[...new Set([30,45,60,90,120,150,180,240,300,s.restSeconds])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${s.restSeconds===n?'selected':''}>${n} 秒</option>`).join('')}</select></label>${settingToggle('autoRest','自动开始休息','勾选完成一组后启动倒计时',s.autoRest)}${settingToggle('sound','前台提示音','仅在页面运行且浏览器允许时播放',s.sound)}${settingToggle('keepAwake','训练时保持亮屏','需要浏览器支持；切到后台会失效',s.keepAwake)}<p class="setting-footnote">计时按结束时间恢复，不依赖后台持续运行。锁屏后不保证准时响铃；请勿将此功能当作系统闹钟。</p></section><section class="panel settings-panel"><h2>${icon('shield')}数据与备份</h2><div class="data-summary"><strong>${state.history.length}<small>次训练</small></strong><strong>${state.templates.length}<small>个计划</small></strong><strong>本机<small>存储位置</small></strong></div><p class="subtle">训练记录保存在当前设备的浏览器中，不上传 GitHub、不自动同步到其他设备。清理网站数据或换手机前，请先备份。</p><div class="backup-status">${icon('clock')}<span>${s.lastBackupAt ? `上次导出 ${new Date(s.lastBackupAt).toLocaleString('zh-CN')}` : '尚未导出备份 · 建议每周备份一次'}</span></div><div class="backup-actions">${button('export-json','导出完整备份','down','button primary')}${button('import-json','恢复备份','up','button secondary')}${button('export-csv','导出历史 CSV','chart','button secondary')}</div>${button('persist-storage','申请持久化存储','shield','text-button wide-gap')}<p class="setting-footnote">持久化申请是否批准由浏览器决定，不能替代备份。导出的文件请保存到你选定的位置（如 iCloud Drive 或电脑 E 盘）。</p></section><section class="panel settings-panel install-panel"><h2>${icon('plus')}添加到 iPhone 主屏幕</h2><ol><li>用 <strong>Safari</strong> 打开本站。</li><li>点“分享”，选择“添加到主屏幕”。</li><li>如有“作为网页 App 打开”选项，请打开。</li><li>打开图标，联网等待“离线已就绪”，再测试断网使用。</li></ol>${installPrompt ? button('install','安装练记','plus','button primary') : ''}<p class="setting-footnote">建议固定使用主屏幕入口与同一网址，避免在不同浏览器或不同站点之间分散记录。</p></section><section class="panel settings-panel about-panel"><div class="about-brand"><img src="./icons/icon.svg" alt=""><div><h2>练记 LiftLog</h2><p>每一组，都算数。</p></div></div><p class="subtle">v1.3.0 · 无广告 · 无第三方追踪<br>离线优先，关注训练本身。</p><p class="setting-footnote">重量统一为 kg；自重、辅助重量请在组设置中选择。单侧动作的重量与次数口径请始终保持一致。</p>${button('check-update','检查应用更新','','text-button')}</section></div>`;
+return `${heading('YOUR SPACE, YOUR RULES','按你的习惯来。','简单设置，让记录更顺手。')}<div class="settings-grid">${profilePanel()}<section class="panel settings-panel"><h2>${icon('settings')}训练偏好</h2><label class="setting-row"><span><strong>每周训练目标</strong><small>用来显示本周进度</small></span><select data-setting="weeklyGoal" aria-label="每周训练目标">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${s.weeklyGoal===n?'selected':''}>${n} 次</option>`).join('')}</select></label><label class="setting-row"><span><strong>默认组间休息</strong><small>训练中可临时增减 15 秒</small></span><select data-setting="restSeconds" aria-label="默认组间休息">${[...new Set([30,45,60,90,120,150,180,240,300,s.restSeconds])].sort((a,b)=>a-b).map(n=>`<option value="${n}" ${s.restSeconds===n?'selected':''}>${n} 秒</option>`).join('')}</select></label>${settingToggle('autoRest','自动开始休息','勾选完成一组后启动倒计时',s.autoRest)}${settingToggle('sound','前台提示音','仅在页面运行且浏览器允许时播放',s.sound)}${settingToggle('keepAwake','训练时保持亮屏','需要浏览器支持；切到后台会失效',s.keepAwake)}<p class="setting-footnote">计时按结束时间恢复，不依赖后台持续运行。锁屏后不保证准时响铃；请勿将此功能当作系统闹钟。</p></section><section class="panel settings-panel"><h2>${icon('shield')}数据与备份</h2><div class="data-summary"><strong>${state.history.length}<small>次训练</small></strong><strong>${state.templates.length}<small>个计划</small></strong><strong>本机<small>存储位置</small></strong></div><p class="subtle">训练记录保存在当前设备的浏览器中，不上传 GitHub、不自动同步到其他设备。清理网站数据或换手机前，请先备份。</p><div class="backup-status">${icon('clock')}<span>${s.lastBackupAt ? `上次导出 ${new Date(s.lastBackupAt).toLocaleString('zh-CN')}` : '尚未导出备份 · 建议每周备份一次'}</span></div><div class="backup-actions">${button('export-json','导出完整备份','down','button primary')}${button('import-json','恢复备份','up','button secondary')}${button('export-csv','导出历史 CSV','chart','button secondary')}</div>${button('persist-storage','申请持久化存储','shield','text-button wide-gap')}<p class="setting-footnote">持久化申请是否批准由浏览器决定，不能替代备份。导出的文件请保存到你选定的位置（如 iCloud Drive 或电脑 E 盘）。</p></section><section class="panel settings-panel install-panel"><h2>${icon('plus')}添加到 iPhone 主屏幕</h2><ol><li>用 <strong>Safari</strong> 打开本站。</li><li>点“分享”，选择“添加到主屏幕”。</li><li>如有“作为网页 App 打开”选项，请打开。</li><li>打开图标，联网等待“离线已就绪”，再测试断网使用。</li></ol>${installPrompt ? button('install','安装练记','plus','button primary') : ''}<p class="setting-footnote">建议固定使用主屏幕入口与同一网址，避免在不同浏览器或不同站点之间分散记录。</p></section><section class="panel settings-panel about-panel"><div class="about-brand"><img src="./icons/icon.svg" alt=""><div><h2>练记 LiftLog</h2><p>每一组，都算数。</p></div></div><p class="subtle">v1.3.1 · 无广告 · 无第三方追踪<br>离线优先，关注训练本身。</p><p class="setting-footnote">重量统一为 kg；自重、辅助重量请在组设置中选择。单侧动作的重量与次数口径请始终保持一致。</p>${button('check-update','检查应用更新','','text-button')}</section></div>`;
 }
 function settingToggle(key, title, desc, checked) { return `<label class="setting-row"><span><strong>${title}</strong><small>${desc}</small></span><input class="switch" type="checkbox" data-setting="${key}" aria-label="${title}" ${checked?'checked':''}></label>`; }
-function showModal(title, body, cls='') { modal.className=cls; modal.innerHTML=`<div class="modal-heading"><h2 id="modal-title">${title}</h2>${button('close-modal','','close','icon-button','aria-label="关闭对话框"')}</div>${body}`; if(!modal.open) modal.showModal(); }
+function lockModalPage() {
+  if(modalPageLock)return;
+  modalPageLock={x:window.scrollX,y:window.scrollY,focus:document.activeElement};
+  document.documentElement.style.setProperty('--modal-scroll-top',`${-modalPageLock.y}px`);
+  document.documentElement.classList.add('modal-page-locked');
+}
+function unlockModalPage() {
+  if(!modalPageLock)return;
+  const saved=modalPageLock;modalPageLock=null;
+  document.documentElement.classList.remove('modal-page-locked');
+  document.documentElement.style.removeProperty('--modal-scroll-top');
+  if(saved.focus?.isConnected)saved.focus.focus({preventScroll:true});
+  window.scrollTo({left:saved.x,top:saved.y,behavior:'instant'});
+}
+function dismissModal() {
+  modalBack=null;modalRenderId++;if(modal.open)modal.close();unlockModalPage();
+  const resolve=confirmResolve;confirmResolve=null;resolve?.(false);
+}
+function closeModalLevel() {
+  if(modalBack){const back=modalBack;modalBack=null;back();}
+  else dismissModal();
+}
+function showModal(title, body, cls='', {back=null,scrollTop=0}={}) {
+  lockModalPage();modalBack=back;const renderId=++modalRenderId;
+  modal.className=cls;modal.innerHTML=`<div class="modal-heading"><h2 id="modal-title">${title}</h2>${button('close-modal','','close','icon-button',`aria-label="关闭对话框" title="${back?'返回上一级':'关闭'}"`)}</div>${body}`;
+  if(!modal.open)modal.showModal();
+  modal.scrollTop=scrollTop;
+  requestAnimationFrame(()=>{if(modal.open&&modalRenderId===renderId)modal.scrollTop=scrollTop;});
+}
 function ask(title, text, label='确认', danger=false) { return new Promise(resolve=>{confirmResolve=resolve;showModal(title,`<p class="confirm-text">${esc(text)}</p><div class="modal-actions">${button('close-modal','取消','','button secondary')}${button('confirm',label,'',`button ${danger?'danger-fill':'primary'}`)}</div>`,'confirm-modal');}); }
 function templateModal(template) { templateDraft=clone(template || {id:uid(),name:'',group:'自定义',note:'',exercises:[{id:uid(),name:'',sets:4,reps:10,weight:0}]}); showTemplateForm(); }
 function builderCard(e,i,length) {
@@ -140,7 +169,7 @@ function builderCard(e,i,length) {
     </div><div class="builder-detail-tools"><span>${LOAD_MODES[e.mode||'weight']} · ${e.setPlan?'已设置逐组参数':'统一初始重量'}</span>${button('builder-details','逐组 / 特殊组设置','edit','text-button',`type="button" data-index="${i}"`)}</div>
   </div>`;
 }
-function showTemplateForm() {
+function showTemplateForm(scrollTop=modal.querySelector('#template-form')?modal.scrollTop:0) {
   const t=templateDraft, groups=[...new Set([...PLAN_GROUPS,t.group])];
   showModal(state.templates.some(p=>p.id===t.id)?'编辑训练计划':'新建训练计划',`<form id="template-form">
     <div class="form-two"><label class="field">计划名称<input name="name" required maxlength="120" value="${esc(t.name)}" placeholder="例如：胸部力量"></label><label class="field">训练分类<select name="group">${groups.map(g=>`<option ${g===t.group?'selected':''}>${esc(g)}</option>`).join('')}</select></label></div>
@@ -150,8 +179,8 @@ function showTemplateForm() {
     <div class="builder-add-actions">${button('builder-add','增加动作','plus','button secondary','type="button"')}${button('library-template-add','从动作库添加','plans','button secondary','type="button"')}</div>
     <p class="builder-hint">新动作默认 4 组；同名动作带入最近已完成记录。逐组设置支持自重、辅助重量及递增递减子组。初值不是训练处方。</p>
     <div class="modal-actions"><button type="button" class="button secondary" data-action="close-modal">取消</button><button type="submit" class="button primary">保存计划</button></div>
-  </form>`,'template-modal');
-  document.querySelector('#template-form').addEventListener('submit',async e=>{e.preventDefault(); if(readOnly) return; readDraft(); if(!templateDraft.name.trim() || !templateDraft.exercises.length || templateDraft.exercises.some(e=>!e.name.trim())) {toast('请填写计划名称和至少一个动作');return;} const i=state.templates.findIndex(t=>t.id===templateDraft.id); if(i<0) state.templates.push(clone(templateDraft));else state.templates[i]=clone(templateDraft);await persist();modal.close();render();toast('计划已保存');});
+  </form>`,'template-modal',{scrollTop});
+document.querySelector('#template-form').addEventListener('submit',async e=>{e.preventDefault(); if(readOnly) return; readDraft(); if(!templateDraft.name.trim() || !templateDraft.exercises.length || templateDraft.exercises.some(e=>!e.name.trim())) {toast('请填写计划名称和至少一个动作');return;} const i=state.templates.findIndex(t=>t.id===templateDraft.id); if(i<0) state.templates.push(clone(templateDraft));else state.templates[i]=clone(templateDraft);await persist();dismissModal();render();toast('计划已保存');});
 }
 function readDraft() {
   const form=document.querySelector('#template-form'); if(!form)return;
@@ -178,21 +207,21 @@ function openLibrary(context) {
     ${button('library-back','返回编辑','','text-button')}
     <span>${EXERCISES.length} 个动作 · 离线可用</span>
   </div>
-  <label class="field library-search">搜索动作<input id="library-search" type="search" autocomplete="off" maxlength="120" placeholder="名称、英文或别名，如：卧推 / RDL"></label>
+  <label class="field library-search">搜索动作<input id="library-search" type="search" autocomplete="off" maxlength="120" placeholder="名称或别名，如：卧推"></label>
   <div class="library-filters">
     <label class="field">训练部位<select id="library-part" aria-label="训练部位"><option value="">全部部位</option>${Object.entries(BODY_PARTS).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('')}</select></label>
     <label class="field">主要器材<select id="library-equipment" aria-label="主要器材"><option value="">全部器材</option>${Object.entries(EQUIPMENT).map(([id,label])=>`<option value="${id}">${esc(label)}</option>`).join('')}</select></label>
   </div>
   <div class="library-result-bar"><span id="library-count" role="status" aria-live="polite"></span>${button('library-reset','清除筛选','','text-button')}</div>
   <div id="library-results" class="library-results" role="region" aria-label="动作检索结果" tabindex="0"></div>
-  `,'library-modal');
+  `,'library-modal',{back:()=>returnFromLibrary()});
   modal.scrollTop=0;
   renderLibraryResults();
 }
 function renderLibraryResults() {
   const results=[...filterExercises(libraryFilters),...personalLibrary().filter(e=>(!libraryFilters.part)&&(!libraryFilters.equipment||libraryFilters.equipment===e.equipment)&&e.name.toLowerCase().includes(libraryFilters.query.trim().toLowerCase()))];
   document.querySelector('#library-count').textContent=`找到 ${results.length} / ${EXERCISES.length+personalLibrary().length} 个动作`;
-  document.querySelector('#library-results').innerHTML=results.length?results.map(e=>`<button type="button" class="library-item" data-action="library-select" data-id="${e.id}" aria-label="选择${esc(e.name)}"><span class="library-item-main"><strong>${esc(e.name)}</strong><small class="library-english">${esc(e.english)}</small><span class="library-tags"><span class="library-equipment-tag">${esc(EQUIPMENT[e.equipment])}</span><span>${esc(e.primary.join('、'))}</span><span class="library-level">${esc(e.level)}</span></span>${e.secondary.length?`<small class="library-muscles">辅助：${esc(e.secondary.join('、'))}</small>`:''}<small class="library-last">${libraryLast(e.name)}</small></span><span class="library-select-mark" aria-hidden="true">＋</span></button>`).join(''):`<div class="library-empty"><strong>没有匹配的动作</strong><p>试试其他部位、器材或关键词，也可以返回手动填写。</p>${button('library-manual','返回并手动输入','','button secondary')}</div>`;
+  document.querySelector('#library-results').innerHTML=results.length?results.map(e=>`<button type="button" class="library-item" data-action="library-select" data-id="${e.id}" aria-label="选择${esc(e.name)}"><span class="library-item-main"><strong>${esc(e.name)}</strong><span class="library-tags"><span class="library-equipment-tag">${esc(EQUIPMENT[e.equipment])}</span><span>${esc(e.primary.join('、'))}</span><span class="library-level">${esc(e.level)}</span></span>${e.secondary.length?`<small class="library-muscles">辅助：${esc(e.secondary.join('、'))}</small>`:''}<small class="library-last">${libraryLast(e.name)}</small></span><span class="library-select-mark" aria-hidden="true">＋</span></button>`).join(''):`<div class="library-empty"><strong>没有匹配的动作</strong><p>试试其他部位、器材或关键词，也可以返回手动填写。</p>${button('library-manual','返回并手动输入','','button secondary')}</div>`;
   document.querySelector('#library-results').scrollTop=0;
 }
 function returnFromLibrary(exercise=null,manualName=null) {
@@ -203,7 +232,7 @@ function returnFromLibrary(exercise=null,manualName=null) {
     const name=exercise?.name??manualName;
     const draft=name!=null&&name!==context.draft.name?exerciseDraft(name,state.history,state.active,exercise?.equipment==='bodyweight'?'bodyweight':'weight'):context.draft;
     addExerciseModal({...draft,position:context.position});
-    requestAnimationFrame(()=>document.querySelector('#add-exercise-form [name="name"]')?.focus({preventScroll:true}));
+    requestAnimationFrame(()=>{modal.scrollTop=context.scrollTop||0;});
     return;
   }
   let index=context.index;
@@ -219,7 +248,7 @@ function returnFromLibrary(exercise=null,manualName=null) {
     const name=exercise?.name??manualName, id=templateDraft.exercises[index].id;
     templateDraft.exercises[index]={...templateExercise(exerciseDraft(name,state.history,state.active,exercise?.equipment==='bodyweight'?'bodyweight':'weight')),id};
   }
-  showTemplateForm();
+  showTemplateForm(context.scrollTop);
   requestAnimationFrame(()=>{
     modal.scrollTop=context.scrollTop;
     if(index!=null)document.querySelector(`[name="exercise-${index}"]`)?.focus({preventScroll:true});
@@ -233,7 +262,7 @@ function handleLibraryAction(action,el) {
     openLibrary({type:'template',index:action==='library-template'?Number(el.dataset.index):null,scrollTop:modal.scrollTop});return true;
   }
   if(action==='library-session') {
-    readWorkoutEditor();openLibrary({type:'session',draft:clone(workoutDraft),position:workoutContext.position});return true;
+    readWorkoutEditor();openLibrary({type:'session',draft:clone(workoutDraft),position:workoutContext.position,scrollTop:modal.scrollTop});return true;
   }
   if(action==='library-back'){returnFromLibrary();return true;}
   if(action==='library-manual'){returnFromLibrary(null,libraryFilters.query.trim());return true;}
@@ -245,7 +274,7 @@ function handleLibraryAction(action,el) {
   }
   return false;
 }
-modal.addEventListener('cancel',event=>{if(libraryContext){event.preventDefault();returnFromLibrary();}});
+modal.addEventListener('cancel',event=>{event.preventDefault();closeModalLevel();});
 document.addEventListener('input',event=>{if(event.target.id==='library-search'&&libraryContext){libraryFilters.query=event.target.value;renderLibraryResults();}});
 document.addEventListener('change',event=>{
   if(!libraryContext)return;
@@ -279,9 +308,9 @@ document.addEventListener('click',async event=>{
   if(readOnly&&!readActions.includes(a)){toast('本页只读，请关闭其他练记页面后刷新');return;}
   try {
     if(a==='nav'){nav(el.dataset.view);return;}
-    if(a==='close-modal'){if(libraryContext)returnFromLibrary();else modal.close();return;}
+    if(a==='close-modal'){closeModalLevel();return;}
     if(handleLibraryAction(a,el))return;
-    if(a==='confirm'){const r=confirmResolve;confirmResolve=null;r?.(true);modal.close();return;}
+    if(a==='confirm'){const r=confirmResolve;confirmResolve=null;r?.(true);dismissModal();return;}
     if(a==='start'){const t=state.templates.find(t=>t.id===id);if(t)await startTemplate(t);return;}
     if(a==='resume'){nav('train');return;}
     if(a==='free-session'){await startTemplate({id:'',name:'自由训练',group:'自定义',exercises:[]});addExerciseModal();return;}
@@ -302,7 +331,8 @@ document.addEventListener('click',async event=>{
     if(a==='rest-start'){primeAudio();state.active.rest={endAt:(state.active.pausedAt??Date.now())+state.settings.restSeconds*1000,total:state.settings.restSeconds,notified:false};await persist();render();return;}
     if(a==='rest-stop'){state.active.rest=null;await persist();render();return;}
     if(a==='rest-plus'||a==='rest-minus'){const r=state.active.rest;if(r){r.endAt=Math.max(state.active.pausedAt??Date.now(),r.endAt+(a==='rest-plus'?15000:-15000));r.notified=false;await persist();updateTimers();}return;}
-    if(a==='finish'){const count=totals(state.active).sets;if(!state.active.exercises.some(hasCompleted)){toast('至少完成一组或一个子组后才能保存训练');return;}if(await ask('完成今天的训练？',`将保存 ${count} 个完整组及已完成子组。未完成部分保留，但不计入重量趋势或容量。`,'完成训练')){const done=finishSession(state.active);state.history.push(done);state.active=null;await persist();await syncWake();view='history';location.hash='history';selectedHistory=done.id;historyEditing=false;render();window.scrollTo(0,0);toast('训练已保存，动作库历史重量已更新。');}return;}
+    if(a==='finish'){showFinishModal();return;}
+    if(a==='edit-energy'){showFinishModal(selectedHistory);return;}
     if(a==='discard'){if(await ask('放弃本次训练？','本次尚未结束的训练将被删除，已保存的历史不受影响。','放弃训练',true)){state.active=null;await persist();await syncWake();nav('home');}return;}
     if(a==='history-detail'){view='history';location.hash='history';selectedHistory=id;historyEditing=false;render();window.scrollTo(0,0);return;}
     if(a==='history-back'){selectedHistory=null;historyEditing=false;render();return;}
@@ -327,6 +357,7 @@ function restoreEmptyZero(el) {
 document.addEventListener('focusin',event=>{
   const el=event.target;
   if(readOnly||!(el instanceof HTMLInputElement)||el.type!=='number'||el.disabled||el.readOnly)return;
+  if(el.dataset.allowEmpty==='true'){el.select();return;}
   if(el.value!==''&&Number(el.value)===0&&Number(el.min||0)<=0){el.dataset.replaceZero='true';el.value='';}
 });
 // Capture change before the existing field-validation handler restores saved values.
@@ -344,7 +375,7 @@ document.addEventListener('input',event=>{
 });
 document.addEventListener('change',async event=>{const el=event.target;if(el.dataset.historyId){if(readOnly)return;if(el.checked)historySelection.add(el.dataset.historyId);else historySelection.delete(el.dataset.historyId);render();return;}if(el.id==='history-search'){historyQuery=el.value;historySelection.clear();render();return;}if(el.id==='history-month'){historyMonth=el.value;historySelection.clear();render();return;}if(readOnly)return;if(el.dataset.setting){state.settings[el.dataset.setting]=el.type==='checkbox'?el.checked:Number(el.value);await persist();await syncWake();return;}if(el.dataset.field){const group=findExercise(el.dataset.ex)?.sets.find(s=>s.id===el.dataset.setid);const s=el.dataset.segment!=null?group?.segments[Number(el.dataset.segment)]:group;if(s)el.value=s[el.dataset.field];}});
 document.querySelector('#import-file').addEventListener('change',async event=>{const file=event.target.files[0];event.target.value='';if(!file||readOnly)return;try{if(file.size>15*1024*1024)throw new Error('备份文件超过 15MB，请检查文件');pendingBackup=parseBackup(await file.text());if(await ask('用备份恢复记录？',`包含 ${pendingBackup.history.length} 次训练、${pendingBackup.templates.length} 个计划。将替换本机现有数据；请先导出当前备份。`,'恢复并替换')){state=pendingBackup;historySelection.clear();historyManage=false;historyEditing=false;selectedHistory=null;await persist();await syncWake();render();toast('备份已恢复');}pendingBackup=null;}catch(error){toast(`无法导入：${error.message}`);}});
-modal.addEventListener('close',()=>{const r=confirmResolve;confirmResolve=null;r?.(false);});
+modal.addEventListener('close',()=>{if(!modal.open){modalBack=null;unlockModalPage();const r=confirmResolve;confirmResolve=null;r?.(false);}});
 window.addEventListener('hashchange',()=>{const v=location.hash.slice(1)||'home';if(v!==view){view=v;selectedHistory=null;render();}});
 window.addEventListener('online',()=>{render();});window.addEventListener('offline',()=>{render();});
 window.addEventListener('beforeunload',e=>{if(pendingSaves||saveError){e.preventDefault();e.returnValue='';}});
@@ -370,6 +401,10 @@ function sessionDashboard(s) {
 }
 function energyCard(s, live) {
   const energy=estimateEnergy(s), p=s.energyProfile;
+  if(!live){
+    const summary=energySummary(s), type=summary.type==='total'?'总消耗':'活动消耗';
+    return `<section class="energy-card energy-history"><div class="energy-heading"><span>${icon('bolt')}${type} · ${summary.manual?'手动记录':'估算'}</span>${button('edit-energy','修改热量','','text-button')}</div><div class="energy-number"><strong>${summary.kcal==null?'—':fmt(summary.kcal)}</strong><span>kcal</span></div><p>${summary.manual?'使用你填写的数值，不替代原始估算参数。':energy?`含静息总消耗约 ${fmt(energy.total)} kcal`:'没有可用的估算参数，可手动填写。'}</p><small>${summary.manual?(energy?`原估算：活动 ${fmt(energy.active)} / 总 ${fmt(energy.total)} kcal`:'用户填写 · 非应用测量'): '按本次训练留存参数估算'}</small></section>`;
+  }
   const missing=!p?'请先填写年龄、体重和训练强度。':p.age<19||p.age>59?'当前模型适用于 19–59 岁，暂不生成此年龄的能耗估算。':'此记录没有可用的能耗参数。';
   return `<section class="energy-card ${live?'':'energy-history'}"><div class="energy-heading"><span>${icon('bolt')}活动消耗 · 估算</span>${live?button('edit-profile',p?'调整参数':'设置参数','','text-button','data-current="true"'):''}</div><div class="energy-number"><strong ${live?'data-energy-active':''}>${energy?fmt(energy.active):'—'}</strong><span>kcal</span></div><p>${energy?`含静息总消耗约 <b ${live?'data-energy-total':''}>${fmt(energy.total)}</b> kcal · ${p.met} MET`:(live?missing:p?'年龄超出此估算模型范围':'旧记录未留存参数，不回填估算')}</p><small>${energy?`${fmt(p.weightKg)} kg · ${p.age} 岁 · ${live?'普通组间休息计入，长时间离开请暂停':'使用本次训练留存的参数'}`:'仅供训练趋势参考，不是实际测量'}</small></section>`;
 }
@@ -386,7 +421,7 @@ function profileModal(useCurrent=false) {
     if(!Number.isInteger(p.age)||p.age<1||p.age>120||!Number.isFinite(p.weightKg)||p.weightKg<20||p.weightKg>350||!INTENSITIES.some(i=>i.met===p.met)){toast('请检查年龄、体重与强度');return;}
     state.settings.profile=p;
     if(state.active&&f.get('current'))state.active.energyProfile={...p,method:ENERGY_METHOD};
-    const saved=await persist();modal.close();render();if(saved)toast('参数已保存；已结束的历史记录保持不变');
+    const saved=await persist();dismissModal();render();if(saved)toast('参数已保存；已结束的历史记录保持不变');
   };
 }
 function historyManagement(filtered) {
@@ -398,7 +433,7 @@ async function handleNewAction(action,el) {
   if(action==='pause-session'){togglePause(state.active);await persist();render();return true;}
   if(action==='reorder-exercises'){orderDraft=state.active.exercises.map(e=>e.id);showOrderModal();return true;}
   if(action==='order-move'){moveItem(orderDraft,Number(el.dataset.index),Number(el.dataset.direction));showOrderModal();return true;}
-  if(action==='order-save'){state.active.exercises=orderDraft.map(findExercise);await persist();modal.close();render();toast('本次动作顺序已保存；计划模板不变');return true;}
+  if(action==='order-save'){state.active.exercises=orderDraft.map(findExercise);await persist();dismissModal();render();toast('本次动作顺序已保存；计划模板不变');return true;}
   if(action==='manage-history'){historyManage=!historyManage;historySelection.clear();render();return true;}
   if(action==='select-visible-history'){document.querySelectorAll('[data-history-id]').forEach(input=>historySelection.add(input.dataset.historyId));render();return true;}
   if(action==='delete-selected-history'){
@@ -423,16 +458,46 @@ async function handleNewAction(action,el) {
   }
   return false;
 }
+function showFinishModal(historyId=null) {
+  const session=historyId?state.history.find(h=>h.id===historyId):state.active;
+  if(!session)return;
+  if(!historyId&&!session.exercises.some(hasCompleted)){toast('至少完成一组或一个子组后才能保存训练');return;}
+  const summary=energySummary(session), estimate=summary.estimate;
+  showModal(historyId?'修改训练热量':'完成今天的训练？',`<form id="finish-form">
+    ${historyId?'':`<p class="confirm-text">保存 ${totals(session).sets} 个完整组及已完成子组。</p>`}
+    <div class="finish-estimate">${estimate?`自动估算：活动 <strong>${fmt(estimate.active)}</strong> / 总 <strong>${fmt(estimate.total)}</strong> kcal`:'暂无自动估算，可手动填写热量'}</div>
+    <label class="field">热量类型<select name="energyType" aria-label="热量类型"><option value="active" ${summary.type==='active'?'selected':''}>活动热量（不含静息）</option><option value="total" ${summary.type==='total'?'selected':''}>总热量（包含静息）</option></select></label>
+    <label class="field">手动热量（kcal，可选）<input name="calories" aria-label="手动热量" type="number" inputmode="decimal" min="0" max="100000" step="any" data-allow-empty="true" value="${summary.manual?summary.kcal:''}" placeholder="留空使用自动估算"></label>
+    <p class="builder-hint">可填写手表显示的数值，请对应选择活动或总热量。留空恢复自动活动热量估算；未设置身体参数时显示“—”。</p>
+    <div class="modal-actions">${button('close-modal','取消','','button secondary','type="button"')}<button type="submit" class="button primary">${historyId?'保存热量':'完成训练'}</button></div></form>`,'finish-modal');
+  const form=modal.querySelector('#finish-form');let saving=false;
+  form.onsubmit=async event=>{
+    event.preventDefault();if(readOnly||saving)return;
+    const raw=form.elements.calories.value.trim(), type=form.elements.energyType.value, kcal=Number(raw);
+    if(raw&&(!Number.isFinite(kcal)||kcal<0||kcal>100000)){toast('请输入 0–100000 之间的热量');return;}
+    const current=historyId?state.history.find(h=>h.id===historyId):state.active;
+    if(!current||current.id!==session.id)return;
+    saving=true;form.querySelector('[type="submit"]').disabled=true;
+    try {
+      const record=historyId?current:finishSession(current);
+      if(raw)record.manualEnergy={type,kcal};else delete record.manualEnergy;
+      if(!historyId){state.history.push(record);state.active=null;}
+      const saved=await persist();await syncWake();dismissModal();view='history';location.hash='history';selectedHistory=record.id;historyEditing=false;render();
+      if(!historyId)window.scrollTo(0,0);
+      if(saved)toast(historyId?'训练热量已更新':'训练已保存，动作库历史重量已更新。');
+    }catch(error){toast(error.message||'保存未完成，请重试');saving=false;if(form.isConnected)form.querySelector('[type="submit"]').disabled=false;}
+  };
+}
 function personalLibrary() {
   const known=new Set(EXERCISES.map(e=>e.name)), names=[...new Set([...state.history.flatMap(h=>h.exercises),...(state.active?.exercises||[])].filter(hasCompleted).map(e=>e.name.trim()))].filter(n=>!known.has(n));
   return names.map((name,i)=>({id:`personal-${i}`,name,english:'我的已完成动作',equipment:recentExercise(state.history,name,state.active)?.mode==='bodyweight'?'bodyweight':'other',primary:[],secondary:[],parts:[],level:'个人记录'}));
 }
 function loadText(s,mode='weight') { return `${mode==='bodyweight'?'自重':`${mode==='assisted'?'辅助 ':''}${fmt(s.weight)} kg`} × ${s.reps} 次`; }
 function libraryLast(name) {
-  const e=recentExercise(state.history,name,state.active);if(!e)return '尚无记录 · 默认 4 组，可自由修改';
+  const e=recentExercise(state.history,name,state.active);if(!e)return '默认 4 组';
   const parts=e.sets.flatMap(completedParts), weights=parts.map(p=>p.weight);
   const current=state.active?.exercises.some(e=>e.name.trim()===name&&hasCompleted(e));
-  return `${current?'本次已完成':'最近完成'} ${e.sets.length} 组 · ${e.mode==='bodyweight'?'自重':`${e.mode==='assisted'?'辅助 ':''}${fmt(Math.min(...weights))}${Math.min(...weights)!==Math.max(...weights)?`–${fmt(Math.max(...weights))}`:''} kg`} · 添加时带入逐组数据`;
+  return `${current?'本次':'上次'} · ${e.sets.length}组 · ${e.mode==='bodyweight'?'自重':`${e.mode==='assisted'?'辅助 ':''}${fmt(Math.min(...weights))}${Math.min(...weights)!==Math.max(...weights)?`–${fmt(Math.max(...weights))}`:''} kg`}`;
 }
 function trainingSet(e,s,index) {
   const row=(p,sub=null)=>{
@@ -458,6 +523,11 @@ function editorSet(s,i) {
   const input=(p,j=null)=>`<div class="editor-part"><span>${j==null?'参数':`子组 ${j+1}`}</span><label class="field">${workoutDraft.mode==='assisted'?'辅助重量':'重量'} (kg)<input data-draft-field="weight" data-group-index="${i}" ${j==null?'':`data-part-index="${j}"`} aria-label="第${i+1}组${j==null?'':`子组${j+1}`}重量" type="number" inputmode="decimal" step="any" min="0" max="2000" required value="${workoutDraft.mode==='bodyweight'?0:p.weight}" ${workoutDraft.mode==='bodyweight'?'disabled':''}></label><label class="field">次数<input data-draft-field="reps" data-group-index="${i}" ${j==null?'':`data-part-index="${j}"`} aria-label="第${i+1}组${j==null?'':`子组${j+1}`}次数" type="number" inputmode="numeric" min="1" max="999" required value="${p.reps}"></label></div>`;
   return `<section class="editor-set"><div class="editor-set-heading"><strong>第 ${i+1} 组</strong><select data-kind-index="${i}" aria-label="第${i+1}组类型">${Object.entries(SET_KINDS).map(([v,n])=>`<option value="${v}" ${(s.kind||'normal')===v?'selected':''}>${n}</option>`).join('')}</select>${button('draft-remove-set','','close','icon-button',`type="button" data-index="${i}" aria-label="移除第${i+1}组" ${workoutDraft.sets.length<=1?'disabled':''}`)}</div>${s.segments?`<div class="segment-generator"><label class="field">基数 kg<input data-base="${i}" type="number" min="0" max="2000" step="any" value="${s.weight}"></label><label class="field">${s.kind==='descending'?'递减':s.kind==='ascending'?'递增':'变化'} kg<input data-step="${i}" type="number" min="0" max="2000" step="any" value="${s.segments.length>1?Math.abs(s.segments[1].weight-s.weight):5}"></label><label class="field">子组数<input data-count="${i}" type="number" min="1" max="8" value="${s.segments.length}"></label>${button('draft-generate','生成子组','','button secondary',`type="button" data-index="${i}"`)}</div><p class="builder-hint">可按基数与变化值生成，也可在下方逐项自定义；重新生成会清除本组完成状态。</p>${s.segments.map((p,j)=>input(p,j)).join('')}`:input(s)}${completedParts(s).length?'<small class="completed-hint">含已完成记录，修改会更新本次记录</small>':''}</section>`;
 }
+function returnToTemplateEditor() {
+  const context=workoutContext;
+  showTemplateForm(context?.parentScrollTop||0);
+  requestAnimationFrame(()=>modal.querySelector(`[data-action="builder-details"][data-index="${context?.index}"]`)?.focus({preventScroll:true}));
+}
 function refreshWorkoutFields() {
   const form=modal.querySelector('form[data-workout-editor]');if(!form)return;
   const d=workoutDraft;form.elements.mode.value=d.mode||'weight';form.elements.sets.value=d.sets.length;
@@ -467,6 +537,7 @@ function refreshWorkoutFields() {
 }
 function showWorkoutEditor() {
   const d=workoutDraft, c=workoutContext, adding=c.type==='add';
+  const scrollTop=modal.querySelector('form[data-workout-editor]')?modal.scrollTop:0;
   showModal(adding?'添加训练动作':'逐组与重量设置',`<form id="${adding?'add-exercise-form':'workout-editor-form'}" data-workout-editor>
     <label class="field">动作名称<input name="name" maxlength="120" required value="${esc(d.name)}" placeholder="完整名称匹配最近记录" ${c.type==='session'?'readonly':''}></label>
     ${adding?button('library-session','从动作库选择','plans','button secondary library-entry','type="button"'):''}
@@ -477,22 +548,22 @@ function showWorkoutEditor() {
     ${button('draft-apply','应用为统一普通组','','button secondary','type="button"')}<p class="builder-hint">组数修改立即生效；“应用”会覆盖逐组参数和完成状态。下方可分别编辑每组。</p>
     <div class="editor-sets">${d.sets.map(editorSet).join('')}</div>${button('draft-add-set','增加一组','plus','button secondary','type="button"')}
     ${adding?`<label class="field insert-position">插入位置<select name="position" aria-label="插入位置"><option value="${state.active.exercises.length}" ${c.position===state.active.exercises.length?'selected':''}>放在最后</option>${state.active.exercises.map((e,i)=>`<option value="${i}" ${c.position===i?'selected':''}>放在 ${i+1}. ${esc(e.name)} 之前</option>`).join('')}</select></label>`:''}
-    <div class="modal-actions">${button('draft-cancel','取消','','button secondary','type="button"')}<button type="submit" class="button primary">${adding?'添加动作':'保存设置'}</button></div></form>`,'workout-modal');
+    <div class="modal-actions">${button('draft-cancel','取消','','button secondary','type="button"')}<button type="submit" class="button primary">${adding?'添加动作':'保存设置'}</button></div></form>`,'workout-modal',{scrollTop,back:c.type==='template'?()=>returnToTemplateEditor():null});
   modal.querySelector('form').onsubmit=async event=>{
     event.preventDefault();if(readOnly)return;readWorkoutEditor();if(!workoutDraft.name)return;
-    if(c.type==='template'){templateDraft.exercises[c.index]={...templateExercise(workoutDraft),id:templateDraft.exercises[c.index].id};showTemplateForm();return;}
+    if(c.type==='template'){templateDraft.exercises[c.index]={...templateExercise(workoutDraft),id:templateDraft.exercises[c.index].id};returnToTemplateEditor();return;}
     if(!state.active)return;
     if(adding){if(state.active.exercises.length>=50){toast('每场训练最多 50 个动作');return;}state.active.exercises.splice(c.position,0,clone(workoutDraft));}
     else {const i=state.active.exercises.findIndex(e=>e.id===workoutDraft.id);if(i<0)return;state.active.exercises[i]=clone(workoutDraft);}
     if(state.active.rest&&!state.active.exercises.some(e=>e.sets.some(s=>s.id===state.active.rest.sourceSetId&&setComplete(s))))state.active.rest=null;
-    await persist();modal.close();render();
+    await persist();dismissModal();render();
   };
 }
 async function handleWorkoutAction(a,el) {
   if(a==='session-move'){const index=Number(el.dataset.index), id=state.active.exercises[index]?.id;moveItem(state.active.exercises,index,Number(el.dataset.direction));await persist();render();document.querySelector(`[data-exercise="${id}"]`)?.scrollIntoView({block:'start',behavior:'smooth'});return true;}
   if(a==='edit-workout'){workoutDraft=clone(findExercise(el.dataset.id));workoutContext={type:'session'};showWorkoutEditor();return true;}
-  if(a==='builder-details'){readDraft();const index=Number(el.dataset.index), e=templateDraft.exercises[index];workoutDraft={id:e.id,name:e.name,mode:e.mode||'weight',sets:(e.setPlan||Array.from({length:e.sets},()=>({weight:e.weight,reps:e.reps}))).map(s=>freshSet(s,e.mode))};workoutContext={type:'template',index};showWorkoutEditor();return true;}
-  if(a==='draft-cancel'){if(workoutContext.type==='template')showTemplateForm();else modal.close();return true;}
+  if(a==='builder-details'){readDraft();const index=Number(el.dataset.index), e=templateDraft.exercises[index];workoutDraft={id:e.id,name:e.name,mode:e.mode||'weight',sets:(e.setPlan||Array.from({length:e.sets},()=>({weight:e.weight,reps:e.reps}))).map(s=>freshSet(s,e.mode))};workoutContext={type:'template',index,parentScrollTop:modal.scrollTop};showWorkoutEditor();return true;}
+  if(a==='draft-cancel'){closeModalLevel();return true;}
   if(a==='draft-add-set'){readWorkoutEditor();if(workoutDraft.sets.length>=50){toast('每个动作最多 50 组');return true;}workoutDraft.sets.push(freshSet(workoutDraft.sets.at(-1),workoutDraft.mode));showWorkoutEditor();return true;}
   if(a==='draft-remove-set'){readWorkoutEditor();const i=Number(el.dataset.index);if(completedParts(workoutDraft.sets[i]).length&&!confirm('此组包含已完成记录，仍要从编辑草稿中移除吗？'))return true;workoutDraft.sets.splice(i,1);showWorkoutEditor();return true;}
   if(a==='draft-apply'){readWorkoutEditor();const f=modal.querySelector('form').elements;if(workoutDraft.sets.some(s=>completedParts(s).length)&&!confirm('统一应用会清除这些组的完成状态，继续吗？'))return true;workoutDraft.sets=Array.from({length:Math.round(num(f.sets.value,1,50))},()=>freshSet({weight:num(f.weight.value,0,2000),reps:Math.round(num(f.reps.value,1,999))},workoutDraft.mode));showWorkoutEditor();return true;}
@@ -531,7 +602,7 @@ function showHistoryPlanModal() {
     event.preventDefault();if(readOnly)return;const id=form.elements.target.value, name=form.elements.name.value.trim();const draft=sessionToTemplate(h);
     if(id){const index=state.templates.findIndex(t=>t.id===id);if(index<0)return;const old=state.templates[index];if(!await ask('覆盖这个训练计划？',`将替换“${old.name}”的动作与备注。已有历史不会改变。`,'确认覆盖',true))return;state.templates[index]={...draft,id:old.id,name:old.name,group:old.group};}
     else {if(state.templates.length>=100){toast('最多支持 100 个计划');return;}if(!name)return;state.templates.push({...draft,name});}
-    const saved=await persist();modal.close();render();if(saved)toast(id?'计划已覆盖，历史记录未改变':'已保存为新的训练计划');
+    const saved=await persist();dismissModal();render();if(saved)toast(id?'计划已覆盖，历史记录未改变':'已保存为新的训练计划');
   };
 }
 function trendChart(points,bodyweight) {
