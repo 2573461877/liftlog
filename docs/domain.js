@@ -11,14 +11,32 @@ const exercise = (name, sets = 4, reps = 10) => ({ id: uid(), name, sets, reps, 
 export function initialState() {
   return {
     version: VERSION, updatedAt: Date.now(), active: null, history: [],
-    settings: { restSeconds: 90, weeklyGoal: 4, sound: true, autoRest: true, keepAwake: false, lastBackupAt: null, profile: null },
+    settings: { restSeconds: 90, weeklyGoal: 4, sound: true, autoRest: true, keepAwake: false, lastBackupAt: null, profile: null, defaultSetsUpdated: true },
     templates: [
-      { id: uid(), name: '胸部训练', group: '胸', note: '推的力量，从扎实的每一组开始', exercises: [exercise('杠铃卧推', 4, 8), exercise('上斜哑铃卧推', 3, 10), exercise('绳索夹胸', 3, 12), exercise('绳索下压', 3, 12)] },
-      { id: uid(), name: '背部训练', group: '背', note: '控制离心，感受背部发力', exercises: [exercise('高位下拉', 4, 10), exercise('坐姿划船', 3, 10), exercise('单臂哑铃划船', 3, 10), exercise('哑铃弯举', 3, 12)] },
-      { id: uid(), name: '腿部训练', group: '腿', note: '稳住动作，让进步有迹可循', exercises: [exercise('杠铃深蹲', 4, 8), exercise('罗马尼亚硬拉', 3, 10), exercise('腿举', 3, 12), exercise('坐姿腿弯举', 3, 12)] },
-      { id: uid(), name: '肩部训练', group: '肩', note: '专注动作质量，不急于加重量', exercises: [exercise('哑铃推举', 4, 8), exercise('哑铃侧平举', 3, 12), exercise('反向飞鸟', 3, 12), exercise('绳索面拉', 3, 12)] }
+      { id: uid(), name: '胸部训练', group: '胸', note: '推的力量，从扎实的每一组开始', exercises: [exercise('杠铃卧推', 4, 8), exercise('上斜哑铃卧推', 4, 10), exercise('绳索夹胸', 4, 12), exercise('绳索下压', 4, 12)] },
+      { id: uid(), name: '背部训练', group: '背', note: '控制离心，感受背部发力', exercises: [exercise('高位下拉', 4, 10), exercise('坐姿划船', 4, 10), exercise('单臂哑铃划船', 4, 10), exercise('哑铃弯举', 4, 12)] },
+      { id: uid(), name: '腿部训练', group: '腿', note: '稳住动作，让进步有迹可循', exercises: [exercise('杠铃深蹲', 4, 8), exercise('罗马尼亚硬拉', 4, 10), exercise('腿举', 4, 12), exercise('坐姿腿弯举', 4, 12)] },
+      { id: uid(), name: '肩部训练', group: '肩', note: '专注动作质量，不急于加重量', exercises: [exercise('哑铃推举', 4, 8), exercise('哑铃侧平举', 4, 12), exercise('反向飞鸟', 4, 12), exercise('绳索面拉', 4, 12)] }
     ]
   };
+}
+// Upgrade recognizable built-in plans once; never reset later edits or sessions.
+export function upgradeDefaultSets(state) {
+  if(state.settings.defaultSetsUpdated)return false;
+  const presets=initialState().templates;
+  for(const plan of state.templates){
+    const preset=presets.find(p=>p.name===plan.name&&p.group===plan.group);
+    if(!preset||plan.exercises.length!==preset.exercises.length||!preset.exercises.every(e=>plan.exercises.filter(p=>p.name===e.name).length===1))continue;
+    for(const e of plan.exercises){
+      if(e.setPlan){
+        const last=e.setPlan.at(-1)||{weight:e.weight,reps:e.reps};
+        e.setPlan=Array.from({length:4},(_,i)=>clone(e.setPlan[i]||last));
+      }
+      e.sets=4;
+    }
+  }
+  state.settings.defaultSetsUpdated=true;
+  return true;
 }
 export function totals(session) {
   const exercises=session?.exercises || [];
@@ -72,6 +90,17 @@ export function sessionToTemplate(session) {
 }
 export function generateSegments(kind,base,step,count,reps) {
   return Array.from({length:Math.round(num(count,1,8))},(_,i)=>({weight:Math.round(num(base+(kind==='descending'?-1:1)*step*i,0,2000)*100)/100,reps,done:false}));
+}
+export function toggleSetKind(set, requested, mode='weight') {
+  if(!['ascending','descending'].includes(requested))throw new Error('无效的组类型');
+  const first=partsOf(set)[0], kind=set.kind===requested?'normal':requested;
+  const result={...set,kind,weight:mode==='bodyweight'?0:first.weight,reps:first.reps,done:false};
+  if(kind==='normal')delete result.segments;
+  else {
+    const step=mode==='bodyweight'?0:set.segments?.length>1?Math.abs(set.segments[1].weight-first.weight):5;
+    result.segments=generateSegments(kind,result.weight,step,set.segments?.length||3,result.reps);
+  }
+  return result;
 }
 export function exerciseTrend(history,name,mode='weight') {
   return [...history].sort((a,b)=>a.finishedAt-b.finishedAt).flatMap(h=>{
@@ -188,7 +217,7 @@ export function parseBackup(value) {
   };
   const settings = data.settings || {};
   return { version: VERSION, updatedAt: Date.now(), templates, history: list(data.history, 10000).map(s => session(s)), active: data.active ? session(data.active, true) : null,
-    settings: { restSeconds: number(settings.restSeconds ?? 90, 15, 600, true), weeklyGoal: number(settings.weeklyGoal ?? 4, 1, 7, true), sound: bool(settings.sound ?? true), autoRest: bool(settings.autoRest ?? true), keepAwake: bool(settings.keepAwake ?? false), lastBackupAt: settings.lastBackupAt ? number(settings.lastBackupAt, 1, 8640000000000000) : null, profile:profile(settings.profile) } };
+    settings: { restSeconds: number(settings.restSeconds ?? 90, 15, 600, true), weeklyGoal: number(settings.weeklyGoal ?? 4, 1, 7, true), sound: bool(settings.sound ?? true), autoRest: bool(settings.autoRest ?? true), keepAwake: bool(settings.keepAwake ?? false), lastBackupAt: settings.lastBackupAt ? number(settings.lastBackupAt, 1, 8640000000000000) : null, profile:profile(settings.profile), defaultSetsUpdated:bool(settings.defaultSetsUpdated??false) } };
 }
 export function backupJSON(state) { return JSON.stringify({ app: 'LiftLog', version: VERSION, exportedAt: new Date().toISOString(), data: state }, null, 2); }
 export function historyCSV(history) {
