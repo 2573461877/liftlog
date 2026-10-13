@@ -268,3 +268,50 @@ html,body,button,a,input,select,textarea{touch-action:pan-x pan-y}
   .library-toolbar{margin-bottom:0}
   .library-search{margin-bottom:6px}
 }
+
+/* v1.3: direct ordering, per-set editing and personal exercise trends. */
+.exercise-heading>div{min-width:0}.exercise-heading h2{overflow-wrap:anywhere}
+.exercise-tools,.exercise-tools>div{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.exercise-tools{justify-content:space-between;margin:-4px 0 18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.exercise-tools .text-button{padding:6px;min-height:42px;font-size:13px}
+.exercise-tools .order-button{width:42px;height:42px;font-size:20px}
+.load-badge{display:inline-block;background:#eef4e7;color:#4d6642;padding:5px 9px;border-radius:7px;font-size:12px;white-space:nowrap}
+.button.danger-outline{color:var(--danger);border-color:#e8cccc;background:#fff}
+.session-end .button{border-radius:11px;min-height:46px}
+.bodyweight-value{text-align:center;color:var(--green);font-size:15px}
+.complex-set{background:#f5f8f0;border:1px solid #e4ebdb;border-radius:12px;margin:12px 0;padding:8px}
+.complex-heading,.complex-heading>div{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.complex-heading{font-size:13px;color:#5a6f4b;margin:0 0 6px}.complex-heading .text-button{font-size:12px}
+.complex-set .set-row{gap:6px}.complex-set .set-index{font-size:12px}.complex-set .set-row input{min-width:0}
+.workout-modal,.trend-modal{width:min(700px,calc(100% - 24px));max-height:90dvh;overscroll-behavior:contain}
+.workout-modal .field,.trend-modal .field{min-width:0}.workout-modal input,.workout-modal select,.trend-modal select{min-width:0;width:100%;font-size:16px}
+.draft-history-hint{background:#edf4e6;border:1px solid #dfe9d4;border-radius:10px;padding:12px;margin:0 0 16px;font-size:13px;color:#526943;line-height:1.7}
+.editor-bulk,.segment-generator{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.editor-bulk .field,.segment-generator .field{font-size:12px;margin-bottom:8px}.editor-bulk input,.segment-generator input{padding:10px 8px}
+.editor-sets{display:grid;gap:14px;margin:18px 0}.editor-set{border:1px solid #dfe7d8;background:#f7f9f4;border-radius:14px;padding:14px}
+.editor-set-heading{display:flex;align-items:center;gap:10px;margin-bottom:14px}.editor-set-heading strong{white-space:nowrap;font-size:14px}
+.editor-set-heading select{flex:1;min-height:42px;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}
+.editor-set-heading .icon-button{width:36px;flex:0 0 36px}.editor-part{display:grid;grid-template-columns:52px 1fr 1fr;gap:10px;align-items:center;margin:8px 0}
+.editor-part>span{font-size:12px;color:var(--muted)}.editor-part .field{margin:0;font-size:12px}.editor-part input{background:#fff;min-height:44px;padding:10px}
+.segment-generator>.button{grid-column:1/-1}.completed-hint{display:block;color:#8a662e;font-size:12px;margin-top:10px}
+.insert-position{margin-top:20px}.builder-detail-tools{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.workout-modal .modal-actions{position:sticky;bottom:-24px;z-index:2;background:var(--paper);padding:14px 0;margin-bottom:0;box-shadow:0 -8px 14px #fff}
+.builder-detail-tools>span{font-size:12px;color:var(--muted)}.builder-detail-tools .text-button{font-size:13px}
+.library-last{display:block;background:#f2f6ec;color:#546a44;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.65}
+.trend-entry{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:-5px 0 24px}.trend-entry .subtle{font-size:13px}
+.trend-method{font-size:13px;line-height:1.8;color:#637358;margin:0 0 16px}
+.trend-chart-panel{border:1px solid #dfe7d8;border-radius:14px;background:#f7f9f4;padding:16px;margin-bottom:18px}
+.trend-chart-panel .section-heading{margin-bottom:8px;font-size:14px}.trend-chart-panel .section-heading strong{font-size:24px;color:var(--green)}
+.weight-chart{display:block;width:100%;height:auto;overflow:visible}.weight-chart text{fill:#62745b;font-size:13px;font-family:inherit}
+.chart-grid{stroke:#dde6d4;stroke-width:1}.trend-line{stroke:#3b7354;stroke-width:3;fill:none;stroke-linejoin:round}.trend-point{fill:#fff;stroke:#3b7354;stroke-width:2}
+.trend-record{border:1px solid var(--line);border-radius:12px;margin:10px 0;padding:12px 14px}.trend-record summary{display:flex;justify-content:space-between;align-items:center;gap:12px;cursor:pointer;font-size:14px;min-height:44px}
+.trend-record summary:after{content:'⌄';color:var(--muted)}.trend-record summary>span{flex:1}.trend-record summary small{display:block;font-size:12px;color:var(--muted);margin-top:5px}.trend-record summary strong{white-space:nowrap}
+.trend-set-detail{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding:12px 0;font-size:13px;line-height:1.7}.trend-set-detail>span{color:var(--muted)}
+.history-set-block{border-bottom:1px solid var(--line)}.history-set-block .detail-set{flex-wrap:wrap;border:0}.subgroup-detail{background:#f6f8f2;padding:10px!important;border-radius:6px;margin-bottom:6px}
+@media(max-width:700px){
+ .workout-modal,.trend-modal{padding:20px 16px}.editor-set{padding:12px}.editor-part{gap:8px;grid-template-columns:45px minmax(0,1fr) minmax(0,1fr)}
+ .exercise-tools{gap:6px}.exercise-tools>div{gap:4px}.exercise-tools .text-button{font-size:12px;padding:6px 4px}.exercise-tools .text-button .icon{display:none}
+ .complex-set .set-row{grid-template-columns:26px minmax(45px,1fr) minmax(45px,1fr) 37px 8px;gap:5px}.complex-set .set-check{width:37px}
+ .segment-generator,.editor-bulk{gap:8px}.trend-chart-panel{padding:12px}.trend-record{padding:10px}.history-edit-toolbar{gap:10px}
+ .trend-modal .form-two{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr)}.session-end{gap:10px}.session-end .button{padding:11px 14px}
+}

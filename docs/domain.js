@@ -1,11 +1,13 @@
-export const VERSION = 2;
+export const VERSION = 3;
+export const LOAD_MODES = {weight:'负重', bodyweight:'自重', assisted:'辅助重量'};
+export const SET_KINDS = {normal:'普通组', ascending:'递增组', descending:'递减组', custom:'自定义子组'};
 export const ENERGY_METHOD = 'compendium-2024-v1';
 export const INTENSITIES = [{met:3.5, code:'02054', label:'常规力量 · 多动作、8–15 次'}, {met:6, code:'02050', label:'高强度力量 · 高强度举铁'}];
 export const uid = () => globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 export const clone = value => JSON.parse(JSON.stringify(value));
 export const localDate = (value = Date.now()) => { const d = new Date(value); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 export const num = (value, min, max) => { const n = Number(value); return Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : min; };
-const exercise = (name, sets = 3, reps = 10) => ({ id: uid(), name, sets, reps, weight: 0 });
+const exercise = (name, sets = 4, reps = 10) => ({ id: uid(), name, sets, reps, weight: 0 });
 export function initialState() {
   return {
     version: VERSION, updatedAt: Date.now(), active: null, history: [],
@@ -19,26 +21,83 @@ export function initialState() {
   };
 }
 export function totals(session) {
-  const sets = session?.exercises?.flatMap(e => e.sets).filter(s => s.done) || [];
-  return { sets: sets.length, reps: sets.reduce((n, s) => n + s.reps, 0), volume: sets.reduce((n, s) => n + s.weight * s.reps, 0) };
+  const exercises=session?.exercises || [];
+  const sets=exercises.flatMap(e=>e.sets).filter(setComplete);
+  const reps=exercises.reduce((n,e)=>n+e.sets.flatMap(completedParts).reduce((r,s)=>r+s.reps,0),0);
+  // Assistance is not lifted load, and body mass is deliberately not estimated.
+  const volume=exercises.filter(e=>(e.mode||'weight')==='weight').reduce((n,e)=>n+e.sets.flatMap(completedParts).reduce((v,s)=>v+s.weight*s.reps,0),0);
+  return {sets:sets.length,reps,volume};
+}
+export const partsOf = s => s.segments?.length ? s.segments : [s];
+export const completedParts = s => partsOf(s).filter(p=>p.done);
+export const setComplete = s => partsOf(s).every(p=>p.done);
+export const hasCompleted = e => e.sets.some(s=>completedParts(s).length);
+export function freshSet(s={weight:0,reps:10}, mode='weight') {
+  return {id:uid(),weight:mode==='bodyweight'?0:s.weight,reps:s.reps,done:false,
+    ...(s.kind && s.kind!=='normal'?{kind:s.kind,segments:partsOf(s).map(p=>({weight:mode==='bodyweight'?0:p.weight,reps:p.reps,done:false}))}:{})};
+}
+export function completedExercise(e) {
+  const sets=e.sets.filter(s=>completedParts(s).length).map(s=>{
+    const parts=completedParts(s), first=parts[0];
+    return {...s,weight:first.weight,reps:first.reps,done:true,...(s.segments?{segments:parts.map(p=>({...p,done:true}))}:{})};
+  });
+  return {...e,sets};
 }
 export function lastExercise(history, name) {
   for (const h of [...history].sort((a, b) => b.finishedAt - a.finishedAt)) {
-    const e = h.exercises.find(e => e.name === name && e.sets.some(s => s.done));
+    const e = h.exercises.find(e => e.name.trim() === name.trim() && hasCompleted(e));
     if (e) return e;
   }
   return null;
 }
+// Latest exact-name record, including completed work in the ongoing session.
+export function recentExercise(history, name, active=null) {
+  const current=active?.exercises.find(e=>e.name.trim()===name.trim()&&hasCompleted(e));
+  const found=current||lastExercise(history,name);
+  return found?completedExercise(found):null;
+}
+export function exerciseDraft(name='', history=[], active=null, mode='weight') {
+  const prev=recentExercise(history,name,active);
+  const actualMode=prev?(prev.mode||'weight'):mode;
+  return {id:uid(),name,mode:actualMode,sets:prev?prev.sets.map(s=>freshSet(s,actualMode)):Array.from({length:4},()=>freshSet({weight:0,reps:10},actualMode))};
+}
+export function templateExercise(e) {
+  const sets=e.sets.map(s=>freshSet(s,e.mode||'weight'));
+  return {id:uid(),name:e.name,mode:e.mode||'weight',sets:sets.length,reps:sets[0]?.reps||10,weight:sets[0]?.weight||0,setPlan:sets.map(({id,done,...s})=>s)};
+}
+export function sessionToTemplate(session) {
+  const exercises=session.exercises.filter(hasCompleted).map(e=>templateExercise(completedExercise(e)));
+  if(!exercises.length)throw new Error('没有已完成的动作可保存为计划');
+  return {id:uid(),name:session.name,group:session.group,note:session.note.slice(0,500),exercises};
+}
+export function generateSegments(kind,base,step,count,reps) {
+  return Array.from({length:Math.round(num(count,1,8))},(_,i)=>({weight:Math.round(num(base+(kind==='descending'?-1:1)*step*i,0,2000)*100)/100,reps,done:false}));
+}
+export function exerciseTrend(history,name,mode='weight') {
+  return [...history].sort((a,b)=>a.finishedAt-b.finishedAt).flatMap(h=>{
+    const exercises=h.exercises.filter(e=>e.name.trim()===name.trim()&&(e.mode||'weight')===mode);
+    const sets=exercises.flatMap(e=>e.sets).filter(s=>completedParts(s).length);
+    if(!sets.length)return [];
+    const parts=sets.flatMap(completedParts);
+    // One equally weighted contribution per group; complex groups first average their completed subgroups.
+    const average=sets.reduce((n,s)=>{const p=completedParts(s);return n+p.reduce((v,x)=>v+x.weight,0)/p.length;},0)/sets.length;
+    return [{id:h.id,date:h.finishedAt,name:h.name,average,sets:sets.length,reps:parts.reduce((n,p)=>n+p.reps,0),details:sets,mode}];
+  });
+}
 export function createSession(template, history = [], now = Date.now(), profile = null) {
   return { id: uid(), templateId: template.id, name: template.name, group: template.group, startedAt: now, finishedAt: null, note: '', rest: null,
     pausedMs: 0, pausedAt: null, energyProfile: profile ? {...clone(profile), method: ENERGY_METHOD} : null,
-    exercises: template.exercises.map(e => { const prev = lastExercise(history, e.name); const done = prev?.sets.filter(s => s.done) || [];
-      return { id: uid(), name: e.name, sets: Array.from({ length: e.sets }, (_, i) => ({ id: uid(), weight: done[i]?.weight ?? e.weight, reps: done[i]?.reps ?? e.reps, done: false })) };
+    exercises: template.exercises.map(e => { const prev = lastExercise(history, e.name);
+      const recent=prev?completedExercise(prev):null;
+      const mode=e.mode||recent?.mode||'weight';
+      const compatible=!recent || (recent.mode||'weight')===mode;
+      const setPlan=e.setPlan||Array.from({length:e.sets},()=>({weight:e.weight,reps:e.reps}));
+      return { id: uid(), name: e.name, ...(e.mode||recent?.mode?{mode}:{}), sets:setPlan.map((s,i)=>freshSet(compatible?(recent?.sets[i]??s):s,mode)) };
     })
   };
 }
 export function finishSession(active, now = Date.now()) {
-  if (!active || !totals(active).sets) throw new Error('请至少完成一组再保存训练');
+  if (!active || !active.exercises.some(hasCompleted)) throw new Error('请至少完成一组或一个子组再保存训练');
   const finishedAt = Math.max(now, active.startedAt);
   return { ...clone(active), finishedAt, rest: null, pausedAt: null, pausedMs: finishedAt - active.startedAt - sessionMilliseconds(active, finishedAt) };
 }
@@ -80,7 +139,7 @@ export function restRemaining(rest, now = Date.now()) { return rest ? Math.max(0
 export function parseBackup(value) {
   const source = typeof value === 'string' ? JSON.parse(value) : value;
   const data = source?.app === 'LiftLog' ? source.data : source;
-  if (!data || ![1, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
+  if (!data || ![1, 2, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
   const text = (v, n = 120) => { if (typeof v !== 'string' || v.length > n) throw new Error('备份文本字段无效'); return v; };
   const number = (v, min, max, integer = false) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max || (integer && !Number.isInteger(v))) throw new Error('备份数值字段无效'); return v; };
   const list = (v, max) => { if (!Array.isArray(v) || v.length > max) throw new Error('备份列表无效或过大'); return v; };
@@ -92,16 +151,31 @@ export function parseBackup(value) {
   };
   const ids = new Set();
   const id = v => { const s = text(v, 100); if (!s || ids.has(s)) throw new Error('备份包含重复或空的记录标识'); ids.add(s); return s; };
+  const mode = e => {if(e.mode==null)return {};if(!Object.hasOwn(LOAD_MODES,e.mode))throw new Error('备份重量类型无效');return {mode:e.mode};};
+  const set = (s,planned=false) => {
+    const base={...(planned?{}:{id:id(s.id)}),weight:number(s.weight,0,2000),reps:number(s.reps,1,999,true),...(planned?{}:{done:bool(s.done)})};
+    if(s.kind!=null&&!Object.hasOwn(SET_KINDS,s.kind))throw new Error('备份组类型无效');
+    if(s.kind&&s.kind!=='normal') {
+      const segments=list(s.segments,8).map(p=>({weight:number(p.weight,0,2000),reps:number(p.reps,1,999,true),done:planned?false:bool(p.done)}));
+      if(!segments.length)throw new Error('复合组至少包含一个子组');
+      Object.assign(base,{kind:s.kind,segments,weight:segments[0].weight,reps:segments[0].reps,...(planned?{}:{done:segments.every(p=>p.done)})});
+    } else if(s.segments!=null)throw new Error('普通组不能包含子组');
+    return base;
+  };
   const templates = list(data.templates, 100).map(t => ({ id: id(t.id), name: text(t.name), group: text(t.group, 20), note: text(t.note || '', 500),
-    exercises: list(t.exercises, 50).map(e => ({ id: id(e.id), name: text(e.name), sets: number(e.sets, 1, 30, true), reps: number(e.reps, 1, 999, true), weight: number(e.weight, 0, 2000) })) }));
+    exercises: list(t.exercises, 50).map(e => {
+      const result={id:id(e.id),name:text(e.name),sets:number(e.sets,1,50,true),reps:number(e.reps,1,999,true),weight:number(e.weight,0,2000),...mode(e)};
+      if(e.setPlan!=null){result.setPlan=list(e.setPlan,50).map(s=>set(s,true));if(result.setPlan.length!==e.sets)throw new Error('计划组数与逐组设置不一致');}
+      return result;
+    }) }));
   const session = (s, active = false) => {
     const startedAt = number(s.startedAt, 1, 8640000000000000); const finishedAt = active ? null : number(s.finishedAt, startedAt, 8640000000000000);
     const pausedMs = number(s.pausedMs ?? 0, 0, (finishedAt ?? 8640000000000000) - startedAt);
     const pausedAt = active && s.pausedAt != null ? number(s.pausedAt, startedAt + pausedMs, 8640000000000000) : null;
     const result = { id: id(s.id), templateId: text(s.templateId || '', 100), name: text(s.name), group: text(s.group, 20), startedAt, finishedAt, note: text(s.note || '', 2000), rest: null,
       pausedMs, pausedAt, energyProfile:profile(s.energyProfile, true),
-      exercises: list(s.exercises, 50).map(e => ({ id: id(e.id), name: text(e.name), sets: list(e.sets, 50).map(s => ({ id: id(s.id), weight: number(s.weight, 0, 2000), reps: number(s.reps, 1, 999, true), done: bool(s.done) })) })) };
-    if (!active && !totals(result).sets) throw new Error('历史记录没有已完成组');
+      exercises: list(s.exercises, 50).map(e => ({ id: id(e.id), name: text(e.name),...mode(e), sets: list(e.sets, 50).map(s=>set(s)) })) };
+    if (!active && !result.exercises.some(hasCompleted)) throw new Error('历史记录没有已完成组');
     return result;
   };
   const settings = data.settings || {};
@@ -111,7 +185,7 @@ export function parseBackup(value) {
 export function backupJSON(state) { return JSON.stringify({ app: 'LiftLog', version: VERSION, exportedAt: new Date().toISOString(), data: state }, null, 2); }
 export function historyCSV(history) {
   const cell = v => { let s = String(v ?? ''); if (/^[=+\-@\t\r]/.test(s)) s = "'" + s; return '"' + s.replaceAll('"', '""') + '"'; };
-  const rows = [['日期', '训练', '动作', '组序号', '重量(kg)', '次数', '容量(kg)', '备注']];
-  [...history].sort((a, b) => b.startedAt - a.startedAt).forEach(h => h.exercises.forEach(e => e.sets.forEach((s, i) => { if (s.done) rows.push([localDate(h.startedAt), h.name, e.name, i + 1, s.weight, s.reps, s.weight * s.reps, h.note]); })));
+  const rows = [['日期', '训练', '动作', '组序号', '子组序号', '重量类型', '组类型', '重量(kg)', '次数', '容量(kg)', '备注']];
+  [...history].sort((a, b) => b.startedAt - a.startedAt).forEach(h => h.exercises.forEach(e => e.sets.forEach((s, i) => { partsOf(s).forEach((p,j)=>{if(p.done)rows.push([localDate(h.startedAt), h.name, e.name, i+1,s.segments?j+1:'',LOAD_MODES[e.mode||'weight'],SET_KINDS[s.kind||'normal'],p.weight,p.reps,(e.mode||'weight')==='weight'?p.weight*p.reps:0,h.note]);}); })));
   return '\uFEFF' + rows.map(r => r.map(cell).join(',')).join('\r\n');
 }
