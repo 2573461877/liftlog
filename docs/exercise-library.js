@@ -17,7 +17,11 @@ export const BODY_PARTS = Object.freeze({
   "hamstrings": "大腿后侧",
   "adductors": "大腿内侧",
   "calves": "小腿",
-  "fullbody": "全身复合"
+  "fullbody": "全身复合",
+  "legs": "腿部（未细分）",
+  "arms": "手臂（未细分）",
+  "upperbody": "上肢（未细分）",
+  "lowerbody": "下肢（未细分）"
 });
 export const EQUIPMENT = Object.freeze({
   "barbell": "杠铃",
@@ -179,7 +183,36 @@ export const EXERCISES = Object.freeze([
 const normalized = value => String(value ?? '').normalize('NFKC').toLocaleLowerCase().replace(/[-_／/（）()]/g, ' ').replace(/\s+/g, ' ').trim();
 const searchable = new Map(EXERCISES.map(e => [e.id, normalized([e.name,e.english,e.aliases,...e.primary,...e.secondary,EQUIPMENT[e.equipment],...e.parts.map(p=>BODY_PARTS[p])].join(' '))]));
 // Filters are ANDed. Body filter describes primary targets, not every assisting muscle.
-export function filterExercises({query='',part='',equipment=''}={}) {
+export function filterExercises({query='',part='',equipment=''}={}, catalog=EXERCISES) {
   const tokens=normalized(query).split(' ').filter(Boolean);
-  return EXERCISES.filter(e => (!part || e.parts.includes(part)) && (!equipment || e.equipment===equipment) && tokens.every(t=>searchable.get(e.id).includes(t)));
+  const broader={legs:['legs','quads','hamstrings','adductors','calves'],arms:['arms','biceps','triceps','forearms'],upperbody:['upperbody','chest','back','shoulders','arms','biceps','triceps','forearms'],lowerbody:['lowerbody','legs','glutes','quads','hamstrings','adductors','calves']};
+  return catalog.filter(e => (!part || e.parts.some(p=>(broader[part]||[part]).includes(p))) && (!equipment || e.equipment===equipment) && tokens.every(t=>(searchable.get(e.id)||normalized([e.name,e.english,e.aliases,...e.primary,...e.secondary,EQUIPMENT[e.equipment],...e.parts.map(p=>BODY_PARTS[p])].join(' '))).includes(t)));
+}
+
+// Local suggestions, not an anatomical diagnosis. Explicit names win over plan labels.
+export function inferExerciseTags(name,group='') {
+  const equipmentRules=[['smith',/史密斯|smith/i],['ezbar',/曲[杠杆]|ez[ -]?(bar|杠)?/i],['bands',/弹力带|阻力带|resistance.?band/i],['suspension',/悬挂|trx/i],['cable',/绳索|龙门架|滑轮|拉力器|cable/i],['dumbbell',/哑铃|dumbbell/i],['kettlebell',/壶铃|kettlebell/i],['barbell',/杠铃|barbell/i],['ball',/健身球|瑞士球|瑜伽球/],['machine',/器械|固定器材|哈克|蝴蝶机|推胸机|腿举机|machine/i],['bars',/单杠|双杠|引体/],['bodyweight',/自重|徒手|俯卧撑/]];
+  const partRules=[['hamstrings',/腿弯举|腘绳|罗马尼亚|直腿硬拉/],['forearms',/前臂|腕弯举|腕屈|腕伸/],['calves',/提踵|小腿/],['adductors',/夹腿|内收/],['glutes',/臀|髋外展/],['quads',/腿屈伸|伸腿|腿举|深蹲|股四头/],['biceps',/二头|弯举/],['triceps',/三头|臂屈伸|下压/],['core',/卷腹|举腿|腹|核心/],['shoulders',/反向飞鸟|侧平举|肩|推举/],['chest',/卧推|推胸|夹胸|胸|飞鸟/],['back',/划船|下拉|引体|背/]];
+  const groups={'胸':'chest','背':'back','肩':'shoulders','腿':'legs','手臂':'arms','核心':'core','臀':'glutes','小腿':'calves','上肢':'upperbody','下肢':'lowerbody','全身':'fullbody'};
+  const part=partRules.find(([,r])=>r.test(name))?.[0]||groups[group];
+  return {equipment:equipmentRules.find(([,r])=>r.test(name))?.[0]||'other',parts:part?[part]:[]};
+}
+export function registerCustomExercise(state,name,group,makeId,tags=null) {
+  name=name.trim();if(!name||EXERCISES.some(e=>e.name===name))return false;
+  state.customExercises ||= [];
+  const existing=state.customExercises.find(e=>e.name===name);
+  if(existing){if(!tags)return false;Object.assign(existing,{equipment:tags.equipment,parts:[...tags.parts],tagSource:tags.tagSource||'manual'});return true;}
+  if(state.customExercises.length>=10000)return false;
+  const inferred=tags||inferExerciseTags(name,group);
+  state.customExercises.push({id:makeId(),name,equipment:inferred.equipment,parts:[...inferred.parts],tagSource:tags?.tagSource||'auto'});return true;
+}
+export function syncCustomExercises(state,makeId) {
+  let changed=false;
+  // Prefer the latest use when upgrading an old library, then unfinished plans.
+  for(const context of [state.active,...[...state.history].sort((a,b)=>b.finishedAt-a.finishedAt),...state.templates].filter(Boolean))
+    for(const e of context.exercises)changed=registerCustomExercise(state,e.name,context.group,makeId)||changed;
+  return changed;
+}
+export function customCatalog(state) {
+  return (state.customExercises||[]).map(e=>({id:`custom-${encodeURIComponent(e.id)}`,name:e.name,english:'',aliases:'',equipment:e.equipment,parts:e.parts,primary:e.parts.map(p=>BODY_PARTS[p]),secondary:[],level:e.tagSource==='manual'?'自定义':'自动标签'}));
 }

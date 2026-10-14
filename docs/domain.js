@@ -1,4 +1,5 @@
-export const VERSION = 4;
+import {BODY_PARTS,EQUIPMENT} from './exercise-library.js';
+export const VERSION = 5;
 export const LOAD_MODES = {weight:'负重', bodyweight:'自重', assisted:'辅助重量'};
 export const SET_KINDS = {normal:'普通组', ascending:'递增组', descending:'递减组', custom:'自定义子组'};
 export const ENERGY_METHOD = 'compendium-2024-v1';
@@ -10,7 +11,7 @@ export const num = (value, min, max) => { const n = Number(value); return Number
 const exercise = (name, sets = 4, reps = 10) => ({ id: uid(), name, sets, reps, weight: 0 });
 export function initialState() {
   return {
-    version: VERSION, updatedAt: Date.now(), active: null, history: [],
+    version: VERSION, updatedAt: Date.now(), active: null, history: [], customExercises: [],
     settings: { restSeconds: 90, weeklyGoal: 4, sound: true, autoRest: true, keepAwake: false, lastBackupAt: null, profile: null, defaultSetsUpdated: true },
     templates: [
       { id: uid(), name: '胸部训练', group: '胸', note: '推的力量，从扎实的每一组开始', exercises: [exercise('杠铃卧推', 4, 8), exercise('上斜哑铃卧推', 4, 10), exercise('绳索夹胸', 4, 12), exercise('绳索下压', 4, 12)] },
@@ -95,7 +96,7 @@ export function generateSegments(kind,base,step,count,reps) {
   return Array.from({length:Math.round(num(count,1,8))},(_,i)=>({weight:Math.round(num(base+(kind==='descending'?-1:1)*step*i,0,2000)*100)/100,reps,done:false}));
 }
 export function toggleSetKind(set, requested, mode='weight') {
-  if(!['ascending','descending'].includes(requested))throw new Error('无效的组类型');
+  if(!['normal','ascending','descending'].includes(requested))throw new Error('无效的组类型');
   mode=setMode(set,mode);
   const first=partsOf(set)[0], kind=set.kind===requested?'normal':requested;
   const result={...set,kind,weight:mode==='bodyweight'?0:first.weight,reps:first.reps,done:false};
@@ -108,7 +109,7 @@ export function toggleSetKind(set, requested, mode='weight') {
 }
 // Modes belong to groups; legacy exercise modes remain the fallback.
 export function toggleSetMode(set, requested, fallback='weight') {
-  if(!['bodyweight','assisted'].includes(requested))throw new Error('无效的重量类型');
+  if(!['weight','bodyweight','assisted'].includes(requested))throw new Error('无效的重量类型');
   const result=clone(set);result.mode=setMode(set,fallback)===requested?'weight':requested;
   if(result.mode==='bodyweight'){result.weight=0;partsOf(result).forEach(p=>p.weight=0);}
   return result;
@@ -210,7 +211,7 @@ export function restRemaining(rest, now = Date.now()) { return rest ? Math.max(0
 export function parseBackup(value) {
   const source = typeof value === 'string' ? JSON.parse(value) : value;
   const data = source?.app === 'LiftLog' ? source.data : source;
-  if (!data || ![1, 2, 3, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
+  if (!data || ![1, 2, 3, 4, VERSION].includes(data.version) || !Array.isArray(data.templates) || !Array.isArray(data.history)) throw new Error('不是受支持的练记备份文件');
   const text = (v, n = 120) => { if (typeof v !== 'string' || v.length > n) throw new Error('备份文本字段无效'); return v; };
   const number = (v, min, max, integer = false) => { if (typeof v !== 'number' || !Number.isFinite(v) || v < min || v > max || (integer && !Number.isInteger(v))) throw new Error('备份数值字段无效'); return v; };
   const list = (v, max) => { if (!Array.isArray(v) || v.length > max) throw new Error('备份列表无效或过大'); return v; };
@@ -253,8 +254,14 @@ export function parseBackup(value) {
     if (!active && !result.exercises.some(hasCompleted)) throw new Error('历史记录没有已完成组');
     return result;
   };
+  const customNames=new Set();
+  const customExercises=list(data.customExercises??[],10000).map(e=>{
+    const name=text(e.name).trim(),parts=list(e.parts,17).map(p=>{if(!Object.hasOwn(BODY_PARTS,p))throw new Error('自定义动作部位无效');return p;});
+    if(!name||customNames.has(name)||new Set(parts).size!==parts.length||!Object.hasOwn(EQUIPMENT,e.equipment)||!['auto','manual'].includes(e.tagSource))throw new Error('自定义动作标签无效');
+    customNames.add(name);return {id:id(e.id),name,parts,equipment:e.equipment,tagSource:e.tagSource};
+  });
   const settings = data.settings || {};
-  return { version: VERSION, updatedAt: Date.now(), templates, history: list(data.history, 10000).map(s => session(s)), active: data.active ? session(data.active, true) : null,
+  return { version: VERSION, updatedAt: Date.now(), templates, customExercises, history: list(data.history, 10000).map(s => session(s)), active: data.active ? session(data.active, true) : null,
     settings: { restSeconds: number(settings.restSeconds ?? 90, 15, 600, true), weeklyGoal: number(settings.weeklyGoal ?? 4, 1, 7, true), sound: bool(settings.sound ?? true), autoRest: bool(settings.autoRest ?? true), keepAwake: bool(settings.keepAwake ?? false), lastBackupAt: settings.lastBackupAt ? number(settings.lastBackupAt, 1, 8640000000000000) : null, profile:profile(settings.profile), defaultSetsUpdated:bool(settings.defaultSetsUpdated??false) } };
 }
 export function backupJSON(state) { return JSON.stringify({ app: 'LiftLog', version: VERSION, exportedAt: new Date().toISOString(), data: state }, null, 2); }
