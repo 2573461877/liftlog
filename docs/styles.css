@@ -361,7 +361,6 @@ main{padding-bottom:var(--page-bottom-gap)}
 .rest-progress-track{stroke:#cfddc2}.rest-progress-value{stroke:#507b3e;stroke-linecap:round}
 .rest-bar.paused .rest-progress-value{stroke:#967638}
 .rest-dock .rest-leading{gap:10px;align-items:center}.rest-dock .rest-leading>div{min-width:0}
-.rest-dock .rest-leading small{display:block;margin:4px 0 0;font-size:12px;line-height:1.4;color:#647456}
 .rest-completion{display:flex;flex-direction:column;align-items:flex-end;gap:2px;color:#526746;white-space:nowrap}
 .rest-completion>span{font-size:12px}.rest-completion>strong{font-size:25px;line-height:1.2;font-variant-numeric:tabular-nums;color:#345333}
 .rest-completion strong small{font-size:13px;margin-left:3px}
@@ -414,10 +413,18 @@ main{padding-bottom:var(--page-bottom-gap)}
 .workout-modal .segment-generator .field{margin:0;font-size:12px;gap:4px}.workout-modal .segment-generator input{height:42px;padding:8px}
 .workout-modal .segment-generator>.button{grid-column:auto;min-height:42px;padding:8px 12px;font-size:13px}
 .workout-modal .editor-bulk{margin-bottom:8px}.workout-modal .editor-bulk .field{font-size:13px}
-.exercise-heading{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:10px}
+.exercise-heading{display:grid;grid-template-columns:48px minmax(0,1fr) auto;align-items:start;gap:10px;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.exercise-heading h2{line-height:1.45;margin:0}.exercise-title{align-self:center}
+.exercise-order{position:relative;min-width:0;align-self:start}
+.exercise-order summary{display:flex;align-items:center;justify-content:center;gap:3px;width:48px;min-height:44px;list-style:none;background:var(--soft);border:1px solid #e0e8d9;border-radius:var(--button-radius);color:var(--green);cursor:pointer;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.exercise-order summary::-webkit-details-marker{display:none}.exercise-order summary .icon{width:14px;height:14px;flex-shrink:0}
+.exercise-order summary{-webkit-tap-highlight-color:transparent}
+.exercise-order summary:focus-visible{outline:2px solid var(--green);outline-offset:2px}.exercise-order[open] summary{border-color:var(--green);background:#e3eedb}
+.exercise-order-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:10;display:grid;gap:4px;width:124px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--paper);box-shadow:0 8px 24px #172c2926}
+.order-choice{display:flex;align-items:center;gap:12px;min-height:44px;padding:8px 14px;border:0;border-radius:8px;background:transparent;color:var(--ink);text-align:left;font-size:14px}
+.order-choice:before{content:'↑';font-size:20px;color:var(--green)}.order-choice[data-direction="1"]:before{content:'↓'}.order-choice:hover:not(:disabled){background:var(--soft)}
 .exercise-title{min-width:0}.exercise-title h2{overflow-wrap:anywhere}
 .exercise-card-actions{display:flex;align-items:center;gap:4px}.exercise-card-actions .text-button{min-height:44px;padding:8px;font-size:14px;white-space:nowrap}
-.exercise-tools{margin-top:0;margin-bottom:14px;justify-content:flex-end}
 .custom-tags{margin:0 0 16px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--soft)}
 .custom-tags summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;min-height:28px;font-size:13px;color:var(--muted)}
 .custom-tags summary::-webkit-details-marker{display:none}.custom-tags summary>span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -428,4 +435,23 @@ main{padding-bottom:var(--page-bottom-gap)}
 .custom-part-options input{position:absolute;width:1px;height:1px;opacity:0}.custom-part-options span{display:block;padding:10px 9px;min-height:40px;border:1px solid var(--line);border-radius:8px;background:white;font-size:13px}
 .custom-part-options input:checked+span{background:var(--dark);color:white;border-color:var(--dark)}.custom-part-options input:focus-visible+span{outline:2px solid var(--green);outline-offset:2px}
 @media(max-width:700px){.workout-modal{padding:20px 12px}.workout-modal .modal-actions{bottom:-20px}}
-@media(max-width:360px){.exercise-heading{gap:6px;grid-template-columns:26px minmax(0,1fr) auto}.exercise-card-actions .text-button{padding:8px 4px}}
+@media(max-width:360px){.exercise-heading{gap:6px}.exercise-card-actions .text-button{padding:8px 4px}}
+
+/* v1.5.2: quieter pages and an aligned, two-line rest/progress readout. */
+.rest-dock .rest-leading{display:grid;grid-template-columns:18px minmax(0,1fr);align-items:end;gap:8px}
+.rest-dock .rest-leading>.icon{display:block;width:18px;height:18px;margin-bottom:9px}
+.rest-dock .rest-leading>div,.rest-completion{display:grid;grid-template-rows:20px 36px;row-gap:2px;align-items:center}
+.rest-dock .rest-leading>div>span{font-size:12px;line-height:20px;margin:0}
+.rest-dock [data-rest-time],.rest-completion>strong{display:block;font-size:30px;line-height:36px;margin:0;letter-spacing:0;font-variant-numeric:tabular-nums}
+.rest-completion{text-align:right}.rest-completion-label{display:flex;align-items:center;justify-content:flex-end;gap:8px;font-size:12px;line-height:20px}
+.rest-count{color:var(--muted)}.rest-completion strong small{font-size:15px;line-height:1}
+.draft-history-hint:empty{display:none}
+.inline-help{margin:14px 0 0;color:var(--muted);font-size:13px;line-height:1.8}
+.inline-help summary{cursor:pointer;min-height:40px;display:flex;align-items:center;gap:8px;list-style:none}
+.inline-help summary::-webkit-details-marker{display:none}.inline-help summary:after{content:'＋';color:var(--green)}.inline-help[open] summary:after{content:'−'}
+.inline-help p{margin:8px 0}.inline-help .trend-method{margin:8px 0}
+.hero-content>h2:first-child{margin-top:0}.hero-content>.button{margin-top:20px}
+.hero{min-height:230px}.weekly-panel .week-grid{margin-bottom:4px}
+@media(max-width:360px){.rest-dock [data-rest-time],.rest-completion>strong{font-size:28px}.rest-completion-label{font-size:11px;gap:6px}}
+@media(min-width:701px) and (max-width:1000px){.rest-dock .rest-bar{grid-template-columns:minmax(0,1fr) auto;gap:12px 16px}.rest-controls{grid-column:1/-1}}
+@media(max-width:700px){.exercise-heading.long-title .exercise-title{grid-column:1/-1;grid-row:2}.exercise-heading.long-title .exercise-card-actions{grid-column:3;grid-row:1}}
