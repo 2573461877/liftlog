@@ -194,7 +194,7 @@ export function inferExerciseTags(name,group='') {
   const equipmentRules=[['smith',/史密斯|smith/i],['ezbar',/曲[杠杆]|ez[ -]?(bar|杠)?/i],['bands',/弹力带|阻力带|resistance.?band/i],['suspension',/悬挂|trx/i],['cable',/绳索|龙门架|滑轮|拉力器|cable/i],['dumbbell',/哑铃|dumbbell/i],['kettlebell',/壶铃|kettlebell/i],['barbell',/杠铃|barbell/i],['ball',/健身球|瑞士球|瑜伽球/],['machine',/器械|固定器材|哈克|蝴蝶机|推胸机|腿举机|machine/i],['bars',/单杠|双杠|引体/],['bodyweight',/自重|徒手|俯卧撑/]];
   const partRules=[['hamstrings',/腿弯举|腘绳|罗马尼亚|直腿硬拉/],['forearms',/前臂|腕弯举|腕屈|腕伸/],['calves',/提踵|小腿/],['adductors',/夹腿|内收/],['glutes',/臀|髋外展/],['quads',/腿屈伸|伸腿|腿举|深蹲|股四头/],['biceps',/二头|弯举/],['triceps',/三头|臂屈伸|下压/],['core',/卷腹|举腿|腹|核心/],['shoulders',/反向飞鸟|侧平举|肩|推举/],['chest',/卧推|推胸|夹胸|胸|飞鸟/],['back',/划船|下拉|引体|背/]];
   const groups={'胸':'chest','背':'back','肩':'shoulders','腿':'legs','手臂':'arms','核心':'core','臀':'glutes','小腿':'calves','上肢':'upperbody','下肢':'lowerbody','全身':'fullbody'};
-  const part=partRules.find(([,r])=>r.test(name))?.[0]||groups[group];
+  const part=partRules.find(([,r])=>r.test(name))?.[0]||(Object.hasOwn(groups,group)?groups[group]:undefined);
   return {equipment:equipmentRules.find(([,r])=>r.test(name))?.[0]||'other',parts:part?[part]:[]};
 }
 export function registerCustomExercise(state,name,group,makeId,tags=null) {

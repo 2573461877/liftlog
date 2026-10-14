@@ -256,7 +256,7 @@ export function parseBackup(value) {
   };
   const customNames=new Set();
   const customExercises=list(data.customExercises??[],10000).map(e=>{
-    const name=text(e.name).trim(),parts=list(e.parts,17).map(p=>{if(!Object.hasOwn(BODY_PARTS,p))throw new Error('自定义动作部位无效');return p;});
+    const name=text(e.name).trim(),parts=list(e.parts,Object.keys(BODY_PARTS).length).map(p=>{if(typeof p!=='string'||!Object.hasOwn(BODY_PARTS,p))throw new Error('自定义动作部位无效');return p;});
     if(!name||customNames.has(name)||new Set(parts).size!==parts.length||!Object.hasOwn(EQUIPMENT,e.equipment)||!['auto','manual'].includes(e.tagSource))throw new Error('自定义动作标签无效');
     customNames.add(name);return {id:id(e.id),name,parts,equipment:e.equipment,tagSource:e.tagSource};
   });
